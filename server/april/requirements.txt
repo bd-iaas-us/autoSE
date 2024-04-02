@@ -1,0 +1,8 @@
+vllm
+llama-index-readers-file
+llama-index-embeddings-huggingface
+llama-index-llms-vllm
+llama-index-vector-stores-qdrant 
+fastapi[all]
+requests
+gradio
