@@ -1,8 +1,11 @@
-vllm
+#vllm
 llama-index-readers-file
 llama-index-embeddings-huggingface
 llama-index-llms-vllm
-llama-index-vector-stores-qdrant 
+llama-index-vector-stores-qdrant
+llama-index-llms-anthropic
+llama-index-llms-openai
+
 fastapi[all]
 requests
 gradio

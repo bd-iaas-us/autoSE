@@ -3,28 +3,41 @@ use thiserror::Error;
 use ehttp;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::RecvError;
+use std::env;
+
 
 #[derive(Error, Debug)]
 pub enum CustomError {
     #[error("internal channel error")]
     InternalError(#[from] RecvError),
+    #[error("invalid parameters")]
+    InvalidParameters,
+    #[error("env error")]
+    EnvError(#[from] std::env::VarError),
 }
 
 pub type Result<T> = std::result::Result<T, CustomError>;
 
 
-const CUSTOM_URL :&str = "http://localhost:8080/query";
-
-pub fn query(_url :&str, topic: &str, query: &str) -> Result<String> {
+pub fn query(url :&str, api_key :&str, topic: &str, query: &str, ai :&str) -> Result<String> {
+        //parameters should be non-empty
+        if query.is_empty() || topic.is_empty() || ai.is_empty() {
+            return Err(CustomError::InvalidParameters);
+        }
         let message = json!({
                              "query": query,
                              "topic": topic,
+                             "ai": ai,
         });
-        let request = ehttp::Request::post(
-            CUSTOM_URL,
-            serde_json::to_vec(&message).unwrap(),
+
+     
+        let mut request = ehttp::Request::post(
+                    url,
+                    serde_json::to_vec(&message).unwrap(),
         );
+        request.headers.insert("Authorization", api_key);
     
+
         let (sender, receiver) = channel::<String>();
         ehttp::fetch(request, move |response| match response {
             Ok(resp) => {
@@ -33,38 +46,9 @@ pub fn query(_url :&str, topic: &str, query: &str) -> Result<String> {
                 });
             }
             Err(e) => {
-                println!("{:?}", String::from(e));
-                sender.send("failed.".to_string()).unwrap();
+                sender.send(e.to_string()).unwrap();
             }
         });
 
         return Ok(receiver.recv()?);
 }
-
-//deprecated
-/*
-pub async fn query_old(url: &str, topic: &str, query: &str) -> Result<String> {
-    use reqwest::Client;
-    let client = Client::new();
-    //body is a json:
-    //'{"topic":"faust", "query":"how clickhouse is used ?"}'
-    let body = json!({
-        "topic": topic,
-        "query": query,
-    });
-
-    let response = client
-        .post(url)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .json(&body)
-        .send()
-        .await?;
-
-    //print!("{:?}", response);
-    if !response.status().is_success() {
-        return Err(CustomError::InvalidStatusCode(response.status()));
-    }
-    let body = response.text().await?;
-    Ok(body)
-}
-*/
