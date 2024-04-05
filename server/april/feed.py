@@ -10,7 +10,9 @@ import qdrant_client
 
 #TODO: for each source,, we need a data source class that will load the data from the source
 #For example CodeSource, WikiSource, etc
-documents = SimpleDirectoryReader("data/cannyls-go", recursive=True).load_data()
+import os
+
+documents = SimpleDirectoryReader(os.getenv('DATA_DIRECTORY', "data/cannyls-go"), recursive=True).load_data()
 
 documents = documents[:len(documents)//2]
 #parsing fause project stuck forever? why?
