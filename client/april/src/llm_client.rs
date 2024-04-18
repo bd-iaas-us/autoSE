@@ -3,7 +3,6 @@ use thiserror::Error;
 use ehttp;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::RecvError;
-use std::env;
 
 
 #[derive(Error, Debug)]
