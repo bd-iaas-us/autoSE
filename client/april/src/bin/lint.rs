@@ -104,7 +104,7 @@ fn main() -> Result<()> {
     let mut project_name = match git_utils::get_git_project_name() {
         Ok(p) => p,
         Err(e) => {
-            debug!("get project name error: {}", e);
+            debug!("get project name error: {}, git not installed? or it is not a git project?", e);
             String::new()
         }
     };

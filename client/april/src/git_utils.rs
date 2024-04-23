@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::process::Command;
 use std::path::Path;
 
@@ -21,7 +21,7 @@ pub fn get_git_diff(file: Option<&str>) -> Result<String> {
         command.arg(file);
     }  
 
-    Ok(String::from_utf8(command.output()?.stdout).unwrap())
+    Ok(String::from_utf8(command.output()?.stdout)?)
 }
 
 pub fn get_git_project_name() -> Result<String> {
@@ -33,8 +33,12 @@ pub fn get_git_project_name() -> Result<String> {
         .arg("--show-toplevel")
         .output()?;
 
-    let output_str = String::from_utf8(output.stdout).unwrap();
-    let project_name = Path::new(&output_str.trim()).file_name().unwrap().to_str().unwrap().to_string();
+    let output_str = String::from_utf8(output.stdout)?;
+    let project_name = Path::new(&output_str.trim())
+    .file_name()
+    .ok_or(anyhow!("empty output"))?
+    .to_str().ok_or(anyhow!("convert from osstr failed"))?
+    .to_string();
 
     Ok(project_name)
 }
