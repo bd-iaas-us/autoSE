@@ -1,4 +1,4 @@
-from index import query_lint, AI, suppported_topics
+from index import query_lint, AI, suppported_topics, check_environment
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
@@ -35,7 +35,14 @@ def veriy_header(request: Request):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect API key",
             headers={"WWW-Authenticate": "Basic"})
-    
+
+
+@app.on_event("startup")
+async def startup_event():
+    print("checking environment...")
+    check_environment(os.getenv("AI_BACKEND"))
+    ai = os.getenv("AI_BACKEND")
+
 
 @app.get("/supported_topics", dependencies=[Depends(veriy_header)])
 async def supported_topics() -> Response:
@@ -55,11 +62,11 @@ async def query(request: Request) -> Response:
         request_dict = await request.json()
         topic = request_dict.pop("topic")
         query = request_dict.pop("query")
-        ai = backend_mapping[request_dict.pop("ai")]
     except Exception as e:
         return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
     
     try: 
+        ai = backend_mapping[os.getenv("AI_BACKEND")]
         response = query_lint(ai, topic, query)
     except Exception as e:
         return JSONResponse(status_code=500, content={'message': f"internal error: {e}"})

@@ -19,16 +19,14 @@ class AI(Enum):
 
 
 
-#exam environment variables ANTHROPIC_API_KEY and OPENAI_API_KEY
-
-if 'ANTHROPIC_API_KEY' not in os.environ or 'OPENAI_API_KEY' not in os.environ:
-    raise ValueError("Please set the ANTHROPIC_API_KEY and OPENAI_API_KEY")
-else:
-    #debug
-    print(f"claude key is {os.environ['ANTHROPIC_API_KEY']}")
-    print(f"gpt key is {os.environ['OPENAI_API_KEY']}")
-
-
+def check_environment(ai: str):
+    if ai == "openai" and 'OPENAI_API_KEY' not in os.environ:
+        raise ValueError("Please set the OPENAI_API_KEY")
+    elif ai == "claude" and 'ANTHROPIC_API_KEY' not in os.environ:
+        raise ValueError("Please set the ANTHROPIC_API_KEY")
+    elif ai == "custom":
+        pass
+        
 
 # vllm load model
 # use this to test vllm server
@@ -38,26 +36,17 @@ custom_llm = VllmServer(
 )
 claude_llm = Anthropic(temperature=0.0, model='claude-3-opus-20240229')
 openai_llm = OpenAI(temperature=0.0, model='gpt-3.5-turbo')
+
+
+
+
 Settings.embed_model = HuggingFaceEmbedding(model_name="WhereIsAI/UAE-Large-V1", device="cpu")
 
 client = qdrant_client.QdrantClient(
     url = "http://localhost:6333",
 )
 
-def suppported_topics():
-    """
-    Get the list of supported topics
-    """
-    return [cd.name for cd in client.get_collections().collections]
 
-# try:
-#     suppported_topics()
-# except Exception as e:
-#     print(e)
-#     print("Please start the qdrant server")
-#     sys.exit(1)
-
-# we should find the best template for the prompt
 templates = {
     AI.CLAUDE:"",
     AI.OPENAI:"",
@@ -65,6 +54,12 @@ templates = {
 }
 
 
+
+def suppported_topics():
+    """
+    Get the list of supported topics
+    """
+    return [cd.name for cd in client.get_collections().collections]
 
 
 def query_lint(ai: AI, topic: str, query: str):

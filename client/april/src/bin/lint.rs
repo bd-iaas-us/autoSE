@@ -91,23 +91,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-
-
-    let backend = match &args.backend {
-        Some(b) => b,
-        None => {
-            warn!("backend is empty, use default backend openai");
-            "openai"
-        }
-    };
-
     
-    //check backend should be {openai, claude, custom}
-    if backend != "openai" && backend != "claude" && backend != "custom" {
-        return Err(anyhow!("backend should be openai, claude, custom"));
-    }
-    debug!("backend is {}", backend);
-
 
     let msg = llm_client::supported_topics(&args.api_url, &args.api_key)?;
     let result = match serde_json::from_str::<AILintSupportedTopics>(&msg) {
@@ -145,11 +129,18 @@ fn main() -> Result<()> {
             if file_diff.len() >0  {
                 query = build_query_diff(&args)?;
             } else {
-                query = build_query_single_file(&args)?;
+                query = match build_query_single_file(&args) {
+                    Ok(q) => q,
+                    Err(e) => {
+                        println!("no git diff result found, specify file name to lint");
+                        return Err(e);
+                    }
+                }
+
             }
     }
 
-    match llm_client::query(&args.api_url, &args.api_key, &project_name, &query, &backend) {
+    match llm_client::query(&args.api_url, &args.api_key, &project_name, &query) {
         Ok(msg)=> {
             match serde_json::from_str::<AILintResult>(&msg) {
                 Ok(result) => {

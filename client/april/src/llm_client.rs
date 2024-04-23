@@ -50,15 +50,14 @@ pub fn supported_topics(url :&str, api_key :&str) -> Result<String> {
 
 }
 
-pub fn query(url :&str, api_key :&str, topic: &str, query: &str, ai :&str) -> Result<String> {
+pub fn query(url :&str, api_key :&str, topic: &str, query: &str) -> Result<String> {
         //parameters should be non-empty
-        if query.is_empty() || ai.is_empty() {
+        if query.is_empty() {
             return Err(CustomError::InvalidParameters);
         }
         let message = json!({
                              "query": query,
                              "topic": topic,
-                             "ai": ai,
         });
 
         debug!("topic is {}", topic);
