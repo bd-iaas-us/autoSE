@@ -10,6 +10,20 @@ pub fn is_git_installed() -> Result<()> {
     Ok(())
 }
 
+pub fn get_git_diff(file: Option<&str>) -> Result<String> {
+    is_git_installed()?;
+    
+    let mut command = Command::new("git");
+    command.arg("diff");
+    command.arg("HEAD");
+
+    if let Some(file) = file {
+        command.arg(file);
+    }  
+
+    Ok(String::from_utf8(command.output()?.stdout).unwrap())
+}
+
 pub fn get_git_project_name() -> Result<String> {
 
     is_git_installed()?;
@@ -38,5 +52,10 @@ mod tests {
     #[test]
     fn test_get_git_project_name() {
         assert!(get_git_project_name().is_ok());
+    }
+
+    #[test]
+    fn test_get_git_diff() {
+        assert!(get_git_diff(Some("git_utils.rs")).is_ok());
     }
 }

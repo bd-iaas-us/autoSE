@@ -5,8 +5,10 @@ from llama_index.llms.anthropic import Anthropic
 from llama_index.llms.openai import OpenAI
 from llama_index.core import PromptTemplate
 from llama_index.vector_stores.qdrant import QdrantVectorStore
+from llama_index.core import Response as LlamaIndexResponse
 import qdrant_client
 import os
+import sys
 
 from enum import Enum
 
@@ -16,7 +18,6 @@ class AI(Enum):
     CLAUDE = 3
 
 
-from IPython.display import Markdown, display
 
 #exam environment variables ANTHROPIC_API_KEY and OPENAI_API_KEY
 
@@ -27,6 +28,8 @@ else:
     print(f"claude key is {os.environ['ANTHROPIC_API_KEY']}")
     print(f"gpt key is {os.environ['OPENAI_API_KEY']}")
 
+
+
 # vllm load model
 # use this to test vllm server
 # curl -XPOST http://localhost:8000/generate -d'{"prompt":"hello"}'
@@ -36,10 +39,23 @@ custom_llm = VllmServer(
 claude_llm = Anthropic(temperature=0.0, model='claude-3-opus-20240229')
 openai_llm = OpenAI(temperature=0.0, model='gpt-3.5-turbo')
 Settings.embed_model = HuggingFaceEmbedding(model_name="WhereIsAI/UAE-Large-V1", device="cpu")
+
 client = qdrant_client.QdrantClient(
     url = "http://localhost:6333",
 )
 
+def suppported_topics():
+    """
+    Get the list of supported topics
+    """
+    return [cd.name for cd in client.get_collections().collections]
+
+# try:
+#     suppported_topics()
+# except Exception as e:
+#     print(e)
+#     print("Please start the qdrant server")
+#     sys.exit(1)
 
 # we should find the best template for the prompt
 templates = {
@@ -48,10 +64,45 @@ templates = {
     AI.CUSTOM:""
 }
 
-def query_lint(kind: AI, topic: str, query: str):
+
+
+
+def query_lint(ai: AI, topic: str, query: str):
+    if topic == None or topic == "":
+        return _query_lint(ai, query)
+    return _query_lint_rag(ai, topic, query)
+
+
+
+def _query_lint(kind: AI, query: str) -> LlamaIndexResponse:
+    """
+    Query the LLM model with the given query and return the response,
+    no RAG here, client will upload the whole file.
+    """
+    if kind == AI.CUSTOM:
+        llm = custom_llm
+    elif kind == AI.OPENAI:
+        llm = openai_llm
+    elif kind == AI.CLAUDE:
+        llm = claude_llm
+    else:
+        raise ValueError(f"Invalid AI backend type: {kind}")
+    prompt = f'''
+            Query: {query}\n
+            Your response should be in the following format:
+            How many risks total, and what are the reasons of the risks, and possible fix of this risk.
+            "Answer: \n"
+        '''
+    response = llm.complete(prompt)
+    return LlamaIndexResponse(response=response.text, metadata={})
+
+
+def _query_lint_rag(kind: AI, topic: str, query: str) -> LlamaIndexResponse:
     """
     Query the LLM model with the given query and return the response,
     prompt template is defined in this function.
+    working on the file or project's diff.
+    client will upload the file's diff or project's diff.
     """
     #check topic exists
     vector_store = QdrantVectorStore(client=client, collection_name=topic)
@@ -95,12 +146,31 @@ def display_prompt_dict(prompts_dict):
         print(f"Prompt Key: {k}")
         print(p.get_template())
     
-    
+ 
+# 1. RAG supported. project/file diff model
+# 2. RAG supporeed. whole file model: TODO: overlap between local file and  rag file
+# 3. RAG not supported. whole file model
 if __name__ == "__main__":
+    print(suppported_topics())
+
     querys = ["is snapshot supported? how to snapshot one instance? what's the golang api like?"]
     for q in querys:
         topic = "cannyls-go"
-        response = query_engine_lint(AI.CLAUDE, "cannyls-go", q)
+        response = _query_lint_rag(AI.OPENAI, "cannyls-go", q)
         if hasattr(response, 'metadata'):
             print(response.metadata)
         print(response)
+
+    #open local file as a string
+    with open("data/cannyls-go/storage/allocator/judy_allocator.go", "r") as f:
+        raw_code = f.read()
+        prompt = f'''
+        Rules:
+         User wants a bug free application, can you tell me is there any potential risks or bugs?
+        code is below:
+        {raw_code}
+        '''
+    x = _query_lint(AI.OPENAI, prompt)
+    print(x)
+
+

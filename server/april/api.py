@@ -1,4 +1,4 @@
-from index import query_lint, AI
+from index import query_lint, AI, suppported_topics
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
@@ -36,8 +36,15 @@ def veriy_header(request: Request):
             detail="Incorrect API key",
             headers={"WWW-Authenticate": "Basic"})
     
-        
-#@app.post("/query", dependencies=[Depends(verify_credentials)])
+
+@app.get("/supported_topics", dependencies=[Depends(veriy_header)])
+async def supported_topics() -> Response:
+    """
+    Get the list of supported topics
+    """
+    return JSONResponse(status_code=200, content={"topics": suppported_topics()})
+    
+
 @app.post("/query", dependencies=[Depends(veriy_header)])
 async def query(request: Request) -> Response:
     """
@@ -71,7 +78,6 @@ def handle_response(llm_response) -> str:
     response = {}
     response["message"] = answer[answer.find(keyword) + len(keyword):]
     response["refs"] = [value['file_name'] for value in llm_response.metadata.values()]
-    print(response)
     return response
 
 #uvicorn --reload --port 8000 api:app
