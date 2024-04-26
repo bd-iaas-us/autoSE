@@ -1,10 +1,7 @@
-use ehttp::Response;
 use log::debug;
 use serde_json::json;
 use thiserror::Error;
 use ehttp;
-use std::fmt::format;
-use std::result;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::RecvError;
 

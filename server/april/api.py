@@ -1,6 +1,7 @@
 from index import query_lint, AI, suppported_topics, check_environment
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from contextlib import asynccontextmanager
 
 import uvicorn
 
@@ -9,16 +10,10 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 
+from logger import init_logger
+logger = init_logger(__name__)
 
-app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 backend_mapping = {
@@ -37,12 +32,25 @@ def veriy_header(request: Request):
             headers={"WWW-Authenticate": "Basic"})
 
 
-@app.on_event("startup")
-async def startup_event():
-    print("checking environment...")
-    check_environment(os.getenv("AI_BACKEND"))
-    ai = os.getenv("AI_BACKEND")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load the ML model
+    logger.info("checking environment...")
+    check_environment(os.getenv("AI_BACKEND"))
+    yield
+    # Clean up the ML models and release the resources
+    logger.info("quiting...")
+
+app = FastAPI(lifespan=lifespan, logger=logger)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/supported_topics", dependencies=[Depends(veriy_header)])
 async def supported_topics() -> Response:
@@ -67,6 +75,7 @@ async def query(request: Request) -> Response:
     
     try: 
         ai = backend_mapping[os.getenv("AI_BACKEND")]
+        print(ai, topic, query)
         response = query_lint(ai, topic, query)
     except Exception as e:
         return JSONResponse(status_code=500, content={'message': f"internal error: {e}"})
@@ -76,7 +85,7 @@ async def query(request: Request) -> Response:
     return handle_response(response)
 
 
-def handle_response(llm_response) -> str:
+def handle_response(llm_response):
     #debug
     answer = llm_response.response
     #filter the answer from the response

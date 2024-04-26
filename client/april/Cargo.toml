@@ -19,3 +19,4 @@ serde = { version = "1", features = ["derive"] }
 clap = { version = "4.5.4", features = ["derive", "env"] }
 minijinja = "1.0.16"
 env_logger = "0.10"
+crossterm = "0.27.0"

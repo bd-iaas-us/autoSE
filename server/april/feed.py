@@ -19,8 +19,10 @@ client = qdrant_client.QdrantClient(
 )
 #using cude is a a faster
 Settings.embed_model = HuggingFaceEmbedding(model_name="WhereIsAI/UAE-Large-V1", device="cpu")
+
 vector_store = QdrantVectorStore(client=client, collection_name="cannyls-go")
 storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
 index = VectorStoreIndex.from_documents(
     documents,
     storage_context=storage_context,

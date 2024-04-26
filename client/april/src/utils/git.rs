@@ -10,7 +10,10 @@ pub fn is_git_installed() -> Result<()> {
     Ok(())
 }
 
-pub fn get_git_diff(file: Option<&str>) -> Result<String> {
+/*
+if file is None, I will get the whole diff or, on one file's diff.
+*/
+pub fn get_git_diff(file: &Option<String>) -> Result<String> {
     is_git_installed()?;
     
     let mut command = Command::new("git");
@@ -60,6 +63,6 @@ mod tests {
 
     #[test]
     fn test_get_git_diff() {
-        assert!(get_git_diff(Some("git_utils.rs")).is_ok());
+        assert!(get_git_diff(&Some("git_utils.rs".to_string())).is_ok());
     }
 }

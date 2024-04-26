@@ -10,13 +10,15 @@ import qdrant_client
 import os
 import sys
 
+from logger import init_logger
+logger = init_logger(__name__)
+
 from enum import Enum
 
 class AI(Enum):
     CUSTOM = 1
     OPENAI = 2
     CLAUDE = 3
-
 
 
 def check_environment(ai: str):
@@ -26,6 +28,10 @@ def check_environment(ai: str):
         raise ValueError("Please set the ANTHROPIC_API_KEY")
     elif ai == "custom":
         pass
+    try:
+        suppported_topics()
+    except Exception as e:
+        raise Exception("can not connect to vector store")
         
 
 # vllm load model
@@ -36,7 +42,6 @@ custom_llm = VllmServer(
 )
 claude_llm = Anthropic(temperature=0.0, model='claude-3-opus-20240229')
 openai_llm = OpenAI(temperature=0.0, model='gpt-3.5-turbo')
-
 
 
 
@@ -53,8 +58,6 @@ templates = {
     AI.CUSTOM:""
 }
 
-
-
 def suppported_topics():
     """
     Get the list of supported topics
@@ -63,8 +66,9 @@ def suppported_topics():
 
 
 def query_lint(ai: AI, topic: str, query: str):
-    if topic == None or topic == "":
+    if not topic in suppported_topics():
         return _query_lint(ai, query)
+
     return _query_lint_rag(ai, topic, query)
 
 
@@ -101,7 +105,9 @@ def _query_lint_rag(kind: AI, topic: str, query: str) -> LlamaIndexResponse:
     """
     #check topic exists
     vector_store = QdrantVectorStore(client=client, collection_name=topic)
+
     index = VectorStoreIndex.from_vector_store(vector_store)
+
     if kind == AI.CUSTOM:
         query_engine = index.as_query_engine(llm = custom_llm, response_mode="tree_summarize")
     elif kind == AI.OPENAI:
@@ -142,9 +148,6 @@ def display_prompt_dict(prompts_dict):
         print(p.get_template())
     
  
-# 1. RAG supported. project/file diff model
-# 2. RAG supporeed. whole file model: TODO: overlap between local file and  rag file
-# 3. RAG not supported. whole file model
 if __name__ == "__main__":
     print(suppported_topics())
 
@@ -167,5 +170,3 @@ if __name__ == "__main__":
         '''
     x = _query_lint(AI.OPENAI, prompt)
     print(x)
-
-

@@ -1,31 +1,70 @@
-
 use anyhow::{anyhow, Result};
-use minijinja::{Environment, context};
-use std::fs::File;
-use std::io::Read;
-use clap::Parser;
 use april::llm_client;
-use april::git_utils;
-use log::{warn, debug};
+use april::utils::git;
+use april::utils::spinner;
+use clap::{Parser, Subcommand};
+use log::{debug, warn};
+use minijinja::{context, Environment};
 use serde::Deserialize;
+use std::any;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::sync::mpsc;
 
-
-
-
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
-struct Args {
-    #[clap(index = 1)]
-    file_name: Option<String>,
-    //3 backends, openai, claude, custom
-    #[arg(long, default_value = "openai", env = "BACKEND")]
-    backend: Option<String>,
-    #[arg(long, default_value = "http://localhost:8000", env = "API_URL")]
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// API URL to connect to
+    #[arg(
+        long,
+        global = true,
+        default_value = "http://localhost:8000",
+        env = "API_URL"
+    )]
     api_url: String,
-    #[arg(long, default_value = "unknown", env = "API_KEY")]
-    api_key: String
+
+    #[arg(long, global = true, default_value = "unknown", env = "API_KEY")]
+    api_key: String,
+
+    #[command(subcommand)]
+    command: Commands,
 }
 
+#[derive(Subcommand)]
+enum Commands {
+    /// Configure the application
+    Lint {
+        /// Configuration file to use
+        #[clap(index = 1)]
+        file_name: Option<String>,
+        #[arg(long)]
+        diff_mode: bool,
+    },
+
+    /// Another subcommand, for example to run some operations
+    Dev {
+        /// Detail level
+        #[clap(index = 1)]
+        description: String,
+    },
+}
+
+// #[derive(Parser, Debug)]
+// #[command(author, version, about)]
+// struct Args {
+//     #[clap(index = 1)]
+//     file_name: Option<String>,
+//     //3 backends, openai, claude, custom
+//     #[arg(long, default_value = "openai", env = "BACKEND")]
+//     backend: Option<String>,
+//     #[arg(long, default_value = "http://localhost:8000", env = "API_URL")]
+//     api_url: String,
+//     #[arg(long, default_value = "unknown", env = "API_KEY")]
+//     api_key: String
+// }
+
+/*
 static QUERY_CODE_TEMPLATE :&str = r#"
 Rules:
 User wants a bug free application, can you tell me is there any potential risks or bugs?
@@ -42,8 +81,8 @@ code is below:
 ```
 {{code}}
 ```
-"#; 
-
+"#;
+*/
 
 //TODO: read local rules
 
@@ -58,107 +97,81 @@ struct AILintSupportedTopics {
     topics: Vec<String>,
 }
 
-
-fn build_query_single_file(args: &Args) -> Result<String>{
-    let file_name = match &args.file_name {
-        Some(f) => f,
-        None => {
-            return Err(anyhow!("file name is empty"));
-        }
-    };
-    
-    let mut file = File::open(file_name).unwrap();
-    let mut code_content = String::new();
-    file.read_to_string(&mut code_content).unwrap();
-
-    let mut env = Environment::new();
-    env.add_template("lint", QUERY_CODE_TEMPLATE).unwrap();
-    Ok(env.get_template("lint").unwrap().render(context!(code=>code_content)).unwrap())
-}
-
-fn build_query_diff(args: &Args) -> Result<String>{
-    let file_diff = git_utils::get_git_diff(args.file_name.as_deref())?;
-
-    let mut env = Environment::new();
-    env.add_template("lint", QUERY_CODE_DIFF_TEMPLATE).unwrap();
-    Ok(env.get_template("lint").unwrap().render(context!(code=>file_diff)).unwrap())
-}
-
-
-fn main() -> Result<()> {
-
-    env_logger::init();
-
-    let args = Args::parse();
-
-    
-
-    let msg = llm_client::supported_topics(&args.api_url, &args.api_key)?;
-    let result = match serde_json::from_str::<AILintSupportedTopics>(&msg) {
-        Ok(r) => r,
-        Err(e) => {
-            return Err(anyhow!("parse supported topics error: {},{}", e, msg));
-        }
-    };
-
-    let mut project_name = match git_utils::get_git_project_name() {
-        Ok(p) => p,
-        Err(e) => {
-            debug!("get project name error: {}, git not installed? or it is not a git project?", e);
-            String::new()
-        }
-    };
-
-    let is_rag_supported = result.topics.contains(&project_name);
-    
-
-    //debug info
-    debug!("is rag supported: {}, supported topics are {:?}", is_rag_supported, result.topics);
-
-    
-    let mut query = String::new();
-
-    if !is_rag_supported {
-            query = build_query_single_file(&args)?;
-            project_name = "".to_string();
-
-    } else {/*rag is supported*/
-            //is rag is supported, use the code diff as prompt
-            let file_diff = git_utils::get_git_diff(args.file_name.as_deref())?;
-
-            if file_diff.len() >0  {
-                query = build_query_diff(&args)?;
-            } else {
-                query = match build_query_single_file(&args) {
-                    Ok(q) => q,
-                    Err(e) => {
-                        println!("no git diff result found, specify file name to lint");
-                        return Err(e);
-                    }
-                }
-
+//lint
+fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str) -> Result<()> {
+    let mut project_name = String::new();
+    let mut code = String::new();
+    if diff_mode {
+        project_name = match git::get_git_project_name() {
+            Ok(p) => p,
+            Err(e) => {
+                println!("diff mode is only supported for git project");
+                return Err(e);
             }
+        };
+        //if file_name is provided in diff_mode, we only lint the file itself.
+        //if no file name is provided, we could lint the whole project.
+        code = git::get_git_diff(&file_name)?;
+    } else
+    /* single file mode */
+    {
+        match git::get_git_project_name() {
+            Ok(p) => project_name = p,
+            Err(e) => {
+                //if there is no git project.
+            }
+        };
+        if file_name.is_none() {
+            return Err(anyhow!("you should provide a file name to lint"));
+        }
+        let mut file = File::open(file_name.unwrap())?;
+        file.read_to_string(&mut code)?;
     }
 
-    match llm_client::query(&args.api_url, &args.api_key, &project_name, &query) {
-        Ok(msg)=> {
+    let (tx, rx) = mpsc::channel();
+    spinner::run_spinner("Generating", rx);
+
+    match llm_client::query(api_url, api_key, &project_name, &code) {
+        Ok(msg) => {
             match serde_json::from_str::<AILintResult>(&msg) {
                 Ok(result) => {
+                    //close the fancy spinner.
+                    let _ = tx.send(());
+
                     println!("{}", result.message);
                     for i in 0..result.refs.len() {
                         println!("considering {}", result.refs[i]);
                     }
-                },
+                }
                 Err(_) => {
+                    let _ = tx.send(());
                     println!("ERROR: {}", msg);
                 }
             }
-        },
-        Err(e)=>{
-            println!("request service error: {}",e);
+        }
+        Err(e) => {
+            println!("request service error: {}", e);
         }
     }
-    
+
     Ok(())
-    
+}
+
+//TODO:
+fn dev(description: &str) -> Result<()> {
+    println!("not implemented");
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    env_logger::init();
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Dev { description } => dev(&description),
+        Commands::Lint {
+            file_name,
+            diff_mode,
+        } => lint(file_name, diff_mode, &cli.api_url, &cli.api_key),
+    }
 }
