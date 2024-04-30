@@ -27,4 +27,4 @@ Here is an example screenshot:
 
 # Architecture
 
-![architecture](/Users/xiaoningding/src/AILint/docs/images/architecture.png)
+![architecture](./docs/images/architecture.png)
