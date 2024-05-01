@@ -1,12 +1,12 @@
 use anyhow::{anyhow, Result};
 use april::llm_client;
 use april::utils::git;
+use april::utils::markdown;
 use april::utils::spinner;
 use clap::{Parser, Subcommand};
 use log::{debug, warn};
-use minijinja::{context, Environment};
 use serde::Deserialize;
-use std::any;
+use std::fmt;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Read;
@@ -33,7 +33,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Configure the application
+    /// lint the file
     Lint {
         /// Configuration file to use
         #[clap(index = 1)]
@@ -42,7 +42,7 @@ enum Commands {
         diff_mode: bool,
     },
 
-    /// Another subcommand, for example to run some operations
+    /// given a description, wrote a patch.
     Dev {
         /// Detail level
         #[clap(index = 1)]
@@ -50,46 +50,38 @@ enum Commands {
     },
 }
 
-// #[derive(Parser, Debug)]
-// #[command(author, version, about)]
-// struct Args {
-//     #[clap(index = 1)]
-//     file_name: Option<String>,
-//     //3 backends, openai, claude, custom
-//     #[arg(long, default_value = "openai", env = "BACKEND")]
-//     backend: Option<String>,
-//     #[arg(long, default_value = "http://localhost:8000", env = "API_URL")]
-//     api_url: String,
-//     #[arg(long, default_value = "unknown", env = "API_KEY")]
-//     api_key: String
-// }
-
-/*
-static QUERY_CODE_TEMPLATE :&str = r#"
-Rules:
-User wants a bug free application, can you tell me is there any potential risks or bugs?
-code is below:
-```
-{{code}}
-```
-"#;
-
-static QUERY_CODE_DIFF_TEMPLATE :&str = r#"
-Rules:
-User wants a bug free application, can you tell me is there any potential risks or bugs in following code diff?
-code is below:
-```
-{{code}}
-```
-"#;
-*/
-
 //TODO: read local rules
 
 #[derive(Debug, Deserialize)]
-struct AILintResult {
-    message: String,
-    refs: Vec<String>,
+struct Risk {
+    which_part_of_code: String,
+    reason: String,
+    fix: String,
+}
+
+//TODO: should have better highlight.
+impl fmt::Display for Risk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let theme =
+            bincode::deserialize_from(markdown::DARK_THEME).expect("Invalid builtin light theme");
+
+        let mut options = markdown::RenderOptions::default();
+        options.theme = Some(theme);
+        options.truecolor = true;
+        let mut render = markdown::MarkdownRender::init(options).unwrap();
+        write!(
+            f,
+            "Code  :{}\nReason:{}\nFix   :{}\n",
+            render.render(&self.which_part_of_code),
+            render.render(&self.reason),
+            render.render(&self.fix)
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct Risks {
+    risks: Vec<Risk>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,23 +121,22 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
     }
 
     let (tx, rx) = mpsc::channel();
-    spinner::run_spinner("Generating", rx);
+    let handler = spinner::run_spinner("Generating", rx);
 
     match llm_client::query(api_url, api_key, &project_name, &code) {
         Ok(msg) => {
-            match serde_json::from_str::<AILintResult>(&msg) {
-                Ok(result) => {
+            let _ = tx.send(());
+            let _ = handler.join();
+            match serde_json::from_str::<Risks>(&msg) {
+                Ok(risks) => {
                     //close the fancy spinner.
                     let _ = tx.send(());
-
-                    println!("{}", result.message);
-                    for i in 0..result.refs.len() {
-                        println!("considering {}", result.refs[i]);
+                    for risk in risks.risks {
+                        println!("{}", risk);
                     }
                 }
                 Err(_) => {
-                    let _ = tx.send(());
-                    println!("ERROR: {}", msg);
+                    println!("parse error{}", msg);
                 }
             }
         }

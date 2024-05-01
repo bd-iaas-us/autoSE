@@ -1,62 +1,103 @@
-from llama_index.core import Settings, VectorStoreIndex, SimpleDirectoryReader
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.llms.vllm import VllmServer
-from llama_index.llms.anthropic import Anthropic
-from llama_index.llms.openai import OpenAI
-from llama_index.core import PromptTemplate
-from llama_index.vector_stores.qdrant import QdrantVectorStore
-from llama_index.core import Response as LlamaIndexResponse
-import qdrant_client
+from haystack import Document
+from haystack import Pipeline
+from haystack.components.builders import PromptBuilder
+from haystack.components.writers import DocumentWriter
+from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
+from haystack_integrations.components.retrievers.qdrant import QdrantEmbeddingRetriever
+from haystack.components.embedders import SentenceTransformersTextEmbedder, SentenceTransformersDocumentEmbedder
+from haystack.components.builders.prompt_builder import PromptBuilder
+from haystack.components.generators import OpenAIGenerator
+from haystack.components.generators.chat import OpenAIChatGenerator
+from typing import Any, Callable, Dict, List, Optional, Union
+from haystack.dataclasses import ChatMessage
+from haystack import component
+import json
 import os
-import sys
 
 from logger import init_logger
 logger = init_logger(__name__)
 
-from enum import Enum
 
-class AI(Enum):
-    CUSTOM = 1
-    OPENAI = 2
-    CLAUDE = 3
-
-
-def check_environment(ai: str):
-    if ai == "openai" and 'OPENAI_API_KEY' not in os.environ:
-        raise ValueError("Please set the OPENAI_API_KEY")
-    elif ai == "claude" and 'ANTHROPIC_API_KEY' not in os.environ:
-        raise ValueError("Please set the ANTHROPIC_API_KEY")
-    elif ai == "custom":
-        pass
-    try:
-        suppported_topics()
-    except Exception as e:
-        raise Exception("can not connect to vector store")
-        
-
-# vllm load model
-# use this to test vllm server
-# curl -XPOST http://localhost:8000/generate -d'{"prompt":"hello"}'
-custom_llm = VllmServer(
-   api_url="http://localhost:8000/generate", max_new_tokens=256, temperature=0
-)
-claude_llm = Anthropic(temperature=0.0, model='claude-3-opus-20240229')
-openai_llm = OpenAI(temperature=0.0, model='gpt-3.5-turbo')
-
-
-
-Settings.embed_model = HuggingFaceEmbedding(model_name="WhereIsAI/UAE-Large-V1", device="cpu")
-
-client = qdrant_client.QdrantClient(
-    url = "http://localhost:6333",
-)
+openai_template = """
+{% if documents %}
+Context information is below.
+---------------------
+{% for doc in documents %}
+    {{ doc.content }}
+{% endfor %}
+---------------------
+Given the context information and not prior knowledge
+{% endif %}
+try to find ALL posssble coding risks in the following code.(do not find bugs,risks in context):
+---------------------
+{{code}}
+---------------------
+"""
 
 
 templates = {
-    AI.CLAUDE:"",
-    AI.OPENAI:"",
-    AI.CUSTOM:""
+    "openai":openai_template,
+    "custom": openai_template
 }
+
+
+#this could be also use in debug.
+#connect PromptBuilder and OpenaiChat
+@component
+class PromptConvert:
+  """
+  A component generating personal welcome message and making it upper case
+  """
+  @component.output_types(messages=List[ChatMessage])
+  def run(self, prompt:str):
+    logger.debug(prompt)
+    return {"messages": [ChatMessage.from_user(prompt)]}
+
+
+lint_tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "code_potentia_risks",
+            "description": "get all risks of the code, and put all risks into array. array size equals the total number of risks",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "risks":{
+                            "type" : "array",
+                        "items" :{
+                            "type": "object",
+                            "properties": {
+                                "which_part_of_code": {
+                                    "type": "string",
+                                    "description": "which part of code is wrong. use the origin code",
+                                },
+                                "reason": {
+                                    "type": "string",
+                                    "description": "why this line code has such risk, explain in detail"
+                                },
+                                "fix": {
+                                    "type": "string",
+                                    "description": "possible fix for this risk"
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+        },
+    }
+]
+
+import qdrant_client
+QDRANT_ADDR="http://localhost:6333"
+client = qdrant_client.QdrantClient(
+    url = QDRANT_ADDR
+)
+text_embeder = SentenceTransformersTextEmbedder(model="WhereIsAI/UAE-Large-V1")
+text_embeder.warm_up()
+
+
 
 def suppported_topics():
     """
@@ -64,109 +105,89 @@ def suppported_topics():
     """
     return [cd.name for cd in client.get_collections().collections]
 
+class QueryLint(object):
+    def __init__(self):
+        #check ai backend
+        ai = os.environ["AI_BACKEND"]
+        if not ai:
+            raise Exception("AI_BACKEND not specifiled")
+        if ai == "openai" and "OPENAI_API_KEY" not in os.environ:
+            raise Exception("openai should have env OPENAI_API_KEY")
+    @staticmethod
+    def topic_exist(topic) -> bool:
+        return topic in [cd.name for cd in client.get_collections().collections]
 
-def query_lint(ai: AI, topic: str, query: str):
-    if not topic in suppported_topics():
-        return _query_lint(ai, query)
+    @staticmethod
+    def _build_query_pipe(ai:str, ):
+        query_pipeline = Pipeline()
+        query_pipeline.add_component("prompt_builder", PromptBuilder(template=templates[ai]))
+        query_pipeline.add_component("prompt_convert", PromptConvert())
+        query_pipeline.add_component("llm", OpenAIChatGenerator(generation_kwargs={"tools": lint_tools}))
 
-    return _query_lint_rag(ai, topic, query)
-
-
-
-def _query_lint(kind: AI, query: str) -> LlamaIndexResponse:
-    """
-    Query the LLM model with the given query and return the response,
-    no RAG here, client will upload the whole file.
-    """
-    if kind == AI.CUSTOM:
-        llm = custom_llm
-    elif kind == AI.OPENAI:
-        llm = openai_llm
-    elif kind == AI.CLAUDE:
-        llm = claude_llm
-    else:
-        raise ValueError(f"Invalid AI backend type: {kind}")
-    prompt = f'''
-            Query: {query}\n
-            Your response should be in the following format:
-            How many risks total, and what are the reasons of the risks, and possible fix of this risk.
-            "Answer: \n"
-        '''
-    response = llm.complete(prompt)
-    return LlamaIndexResponse(response=response.text, metadata={})
-
-
-def _query_lint_rag(kind: AI, topic: str, query: str) -> LlamaIndexResponse:
-    """
-    Query the LLM model with the given query and return the response,
-    prompt template is defined in this function.
-    working on the file or project's diff.
-    client will upload the file's diff or project's diff.
-    """
-    #check topic exists
-    vector_store = QdrantVectorStore(client=client, collection_name=topic)
-
-    index = VectorStoreIndex.from_vector_store(vector_store)
-
-    if kind == AI.CUSTOM:
-        query_engine = index.as_query_engine(llm = custom_llm, response_mode="tree_summarize")
-    elif kind == AI.OPENAI:
-        query_engine = index.as_query_engine(llm = openai_llm, response_mode="tree_summarize")
-    elif kind == AI.CLAUDE:
-        query_engine = index.as_query_engine(llm = claude_llm, response_mode="tree_summarize")
-    else:
-        raise ValueError(f"Invalid AI backend type: {kind}")
-
-    new_summary_tmpl_str = '''
-                Context information is below.
-                ---------------------
-                {context_str}
-                ---------------------
-                Given the context information and not prior knowledge
-                Query: {query_str}\n
-                Your response should be in the following format:
-                number of risks are ordered.
-                ```
-                number of risks : reason of risks\n
-                ```
-                "Answer: \n"
-            '''
-
-    query_engine.update_prompts(
-        {"response_synthesizer:summary_template": PromptTemplate(new_summary_tmpl_str)}
-    )
-
-    #DEBUG
-    #display_prompt_dict(query_engine.get_prompts())
-    return query_engine.query(query)
-
-
-# define prompt viewing function
-def display_prompt_dict(prompts_dict):
-    for k, p in prompts_dict.items():
-        print(f"Prompt Key: {k}")
-        print(p.get_template())
+        query_pipeline.connect("prompt_builder", "prompt_convert")
+        query_pipeline.connect("prompt_convert", "llm")
+        return query_pipeline
     
- 
+    @staticmethod
+    def _build_rag_query_pipe(ai:str, document_store: QdrantDocumentStore):
+        query_pipeline = Pipeline()
+
+        query_pipeline.add_component("text_embedder",text_embeder)
+        query_pipeline.add_component("retriever", QdrantEmbeddingRetriever(document_store=document_store))
+        query_pipeline.add_component("prompt_builder", PromptBuilder(template=templates[ai]))
+        query_pipeline.add_component("prompt_convert", PromptConvert())
+        query_pipeline.add_component("llm", OpenAIChatGenerator(generation_kwargs={"tools": lint_tools}))
+
+        query_pipeline.connect("text_embedder.embedding", "retriever.query_embedding")
+        query_pipeline.connect("retriever", "prompt_builder.documents")
+        query_pipeline.connect("prompt_builder", "prompt_convert")
+        query_pipeline.connect("prompt_convert", "llm")
+        return query_pipeline
+    
+    def _query_rag(self, ai: str, topic: str, code: str):
+        #BUG: this QdrantDocumentStore will ALWAYS create collection
+        document_store = QdrantDocumentStore(
+           QDRANT_ADDR,
+           embedding_dim=1024,
+           index = topic,
+        )
+        query_pipeline = self._build_rag_query_pipe(ai, document_store)
+        result = query_pipeline.run({
+                "text_embedder": {"text": code},
+                "retriever": {"top_k": 3},
+                "prompt_builder":{"code": code}
+        })
+        return self.handle_response(result)
+
+    @staticmethod
+    def handle_response(result):
+        function_call = json.loads(result["llm"]["replies"][0].content)[0]
+        logger.debug(function_call)
+        function_args = function_call['function']['arguments']
+        """
+        sample: ["risks":[{which_part_of_code, reason, fix},...]]
+        """
+        return function_args
+
+
+    def _query(self, ai: str, code: str):
+        query_pipeline = self._build_query_pipe(ai)
+        result = query_pipeline.run({
+            "prompt_builder" :{"code": code, "documents": []}
+        })
+        return self.handle_response(result)
+
+        
+    def query_lint(self, ai :str, topic: str, code :str):
+        if self.topic_exist(topic):
+            return self._query_rag(ai, topic, code)
+        
+        return self._query(ai, code)
+
+
 if __name__ == "__main__":
-    print(suppported_topics())
-
-    querys = ["is snapshot supported? how to snapshot one instance? what's the golang api like?"]
-    for q in querys:
-        topic = "cannyls-go"
-        response = _query_lint_rag(AI.OPENAI, "cannyls-go", q)
-        if hasattr(response, 'metadata'):
-            print(response.metadata)
-        print(response)
-
-    #open local file as a string
-    with open("data/cannyls-go/storage/allocator/judy_allocator.go", "r") as f:
-        raw_code = f.read()
-        prompt = f'''
-        Rules:
-         User wants a bug free application, can you tell me is there any potential risks or bugs?
-        code is below:
-        {raw_code}
-        '''
-    x = _query_lint(AI.OPENAI, prompt)
-    print(x)
+    with open("../../client/april/src/llm_client.rs") as f:
+        code = f.read()
+    os.environ["AI_BACKEND"] = "openai"
+    index = QueryLint()
+    print(index.query_lint("openai", "XXX", code))
