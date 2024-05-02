@@ -1,9 +1,12 @@
 use anyhow::Result;
 use crossterm::{cursor, queue, style, terminal};
-use std::{
-    io::{stdout, Stdout, Write}, thread, time::Duration
-};
 use std::sync::mpsc;
+use std::thread::JoinHandle;
+use std::{
+    io::{stdout, Stdout, Write},
+    thread,
+    time::Duration,
+};
 pub struct Spinner {
     index: usize,
     message: String,
@@ -53,21 +56,19 @@ impl Spinner {
     }
 }
 
-pub fn run_spinner(message: &str, rx: mpsc::Receiver<()>){
+pub fn run_spinner(message: &str, rx: mpsc::Receiver<()>) -> JoinHandle<()> {
     let mut writer = stdout();
     let mut spinner = Spinner::new(message);
-    thread::spawn(move ||{
-        loop {
-            if let Ok(_) = rx.try_recv() {
-                spinner.stop(&mut writer);
-                break;
-            } else {
-                thread::sleep(Duration::from_millis(50));
-                spinner.step(&mut writer);
-            }
-
+    let handler = thread::spawn(move || loop {
+        if let Ok(_) = rx.try_recv() {
+            spinner.stop(&mut writer);
+            break;
+        } else {
+            thread::sleep(Duration::from_millis(50));
+            spinner.step(&mut writer);
         }
     });
+    handler
 }
 #[cfg(test)]
 mod tests {
@@ -82,4 +83,3 @@ mod tests {
     }
 }
 //test
-

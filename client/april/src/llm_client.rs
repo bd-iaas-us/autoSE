@@ -1,11 +1,9 @@
+use ehttp;
 use log::debug;
 use serde_json::json;
-use thiserror::Error;
-use ehttp;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::RecvError;
-
-
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CustomError {
@@ -23,62 +21,52 @@ pub enum CustomError {
 
 pub type Result<T> = std::result::Result<T, CustomError>;
 
-
-pub fn supported_topics(url :&str, api_key :&str) -> Result<String> {
-    let mut request = ehttp::Request::get(
-        format!("{}/supported_topics", url).as_str(),
-    );
+pub fn supported_topics(url: &str, api_key: &str) -> Result<String> {
+    let mut request = ehttp::Request::get(format!("{}/supported_topics", url).as_str());
     request.headers.insert("Authorization", api_key);
     let (sender, receiver) = channel::<std::result::Result<ehttp::Response, String>>();
 
     ehttp::fetch(request, move |response| {
-            sender.send(response).unwrap();
+        sender.send(response).unwrap();
     });
 
     match receiver.recv()? {
-    Ok(response) => {
-        let txt = response.text().ok_or(CustomError::BodyMissing)?;
-        Ok(txt.to_string())
-    }
-    Err(e) => {
-        Err(CustomError::HttpError(e))
+        Ok(response) => {
+            let txt = response.text().ok_or(CustomError::BodyMissing)?;
+            Ok(txt.to_string())
+        }
+        Err(e) => Err(CustomError::HttpError(e)),
     }
 }
 
-}
+pub fn query(url: &str, api_key: &str, topic: &str, code: &str) -> Result<String> {
+    //parameters should be non-empty
+    if code.is_empty() {
+        return Err(CustomError::InvalidParameters);
+    }
+    let message = json!({
+                         "code": code,
+                         "topic": topic,
+    });
 
-pub fn query(url :&str, api_key :&str, topic: &str, query: &str) -> Result<String> {
-        //parameters should be non-empty
-        if query.is_empty() {
-            return Err(CustomError::InvalidParameters);
+    debug!("topic is {}", topic);
+    let mut request = ehttp::Request::post(
+        format!("{}/lint", url).as_str(),
+        serde_json::to_vec(&message).unwrap(),
+    );
+    request.headers.insert("Authorization", api_key);
+
+    let (sender, receiver) = channel::<std::result::Result<ehttp::Response, String>>();
+
+    ehttp::fetch(request, move |response| {
+        sender.send(response).unwrap();
+    });
+
+    match receiver.recv()? {
+        Ok(response) => {
+            let txt = response.text().ok_or(CustomError::BodyMissing)?;
+            Ok(txt.to_string())
         }
-        let message = json!({
-                             "query": query,
-                             "topic": topic,
-        });
-
-        debug!("topic is {}", topic);
-        let mut request = ehttp::Request::post(
-                    format!("{}/query", url).as_str(),
-                    serde_json::to_vec(&message).unwrap(),
-        );
-        request.headers.insert("Authorization", api_key);
-    
-
-        let (sender, receiver) = channel::<std::result::Result<ehttp::Response, String>>();
-
-        ehttp::fetch(request, move |response| {
-            sender.send(response).unwrap();
-        });
-
-
-        match receiver.recv()? {
-            Ok(response) => {
-                let txt = response.text().ok_or(CustomError::BodyMissing)?;
-                Ok(txt.to_string())
-            }
-            Err(e) => {
-                Err(CustomError::HttpError(e))
-            }
-        }
+        Err(e) => Err(CustomError::HttpError(e)),
+    }
 }

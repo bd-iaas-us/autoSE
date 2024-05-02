@@ -1,12 +1,6 @@
 #vllm
-llama-index-readers-file
-llama-index-embeddings-huggingface
-llama-index-llms-vllm
-llama-index-vector-stores-qdrant
-llama-index-llms-anthropic
-llama-index-llms-openai
-llama-index-agent-openai
-
+qdrant-haystack
+haystack-ai
 fastapi[all]
 requests
 gradio

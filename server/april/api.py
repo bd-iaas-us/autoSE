@@ -1,9 +1,11 @@
-from index import query_lint, AI, suppported_topics, check_environment
+from index import QueryLint, suppported_topics
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from contextlib import asynccontextmanager
 
 import uvicorn
+import json
+import asyncio
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -15,15 +17,6 @@ logger = init_logger(__name__)
 
 
 
-
-backend_mapping = {
-    "custom": AI.CUSTOM,
-    "openai": AI.OPENAI,
-    "claude": AI.CLAUDE
-}
-
-
-
 def veriy_header(request: Request):
     if request.headers.get("Authorization") != os.getenv("API_KEY"):
         raise HTTPException(
@@ -31,13 +24,10 @@ def veriy_header(request: Request):
             detail="Incorrect API key",
             headers={"WWW-Authenticate": "Basic"})
 
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Load the ML model
     logger.info("checking environment...")
-    check_environment(os.getenv("AI_BACKEND"))
     yield
     # Clean up the ML models and release the resources
     logger.info("quiting...")
@@ -60,7 +50,7 @@ async def supported_topics() -> Response:
     return JSONResponse(status_code=200, content={"topics": suppported_topics()})
     
 
-@app.post("/query", dependencies=[Depends(veriy_header)])
+@app.post("/lint", dependencies=[Depends(veriy_header)])
 async def query(request: Request) -> Response:
     """
     Query the LLM model with the given query and return the response
@@ -69,23 +59,34 @@ async def query(request: Request) -> Response:
     try: 
         request_dict = await request.json()
         topic = request_dict.pop("topic")
-        query = request_dict.pop("query")
+        code = request_dict.pop("code")
     except Exception as e:
         return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
     
     try: 
-        ai = backend_mapping[os.getenv("AI_BACKEND")]
-        print(ai, topic, query)
-        response = query_lint(ai, topic, query)
+        ai = os.getenv("AI_BACKEND")
+        #print(ai, topic, query)
+        llm_response = QueryLint(ai).query_lint(topic, code)
     except Exception as e:
         return JSONResponse(status_code=500, content={'message': f"internal error: {e}"})
-    #for debug
-    # if hasattr(response, 'metadata'):
-    #     print(response.metadata)
-    return handle_response(response)
 
+    if ai == "openai":
+        #llm_respnose is json-encode string returned from openai
+        #response = {"risks":[{"which_part_of_code":"here", "reason":"why", "fix":"how"}, {"which_part_of_code":"here1", "reason":"why2", "fix":"how2"}]}
+        response = json.loads(llm_response)
+        response["backend"] = ai
+        response["plain_risks"] = ""
+        logger.debug(response)
+        return JSONResponse(content=response)
+    else:
+        response = {}
+        response["backend"] = ai
+        response["plain_risks"] = llm_response
+        response["risks"] = []
+        return JSONResponse(content=response)
 
-def handle_response(llm_response):
+#TODO: if llm returns a plain text. maybe we could parse it into a vector of risks.
+def handle_custom_response(llm_response, ai):
     #debug
     answer = llm_response.response
     #filter the answer from the response
