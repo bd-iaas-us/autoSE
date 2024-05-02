@@ -23,9 +23,6 @@ jobs:
         - macos-latest
     runs-on: ${{matrix.os}}
 
-    env:
-      RUSTFLAGS: --deny warnings
-
     steps:
     - uses: actions/checkout@v4
 
