@@ -10,6 +10,7 @@ from haystack.components.generators import OpenAIGenerator
 from haystack.components.generators.chat import OpenAIChatGenerator
 from typing import Any, Callable, Dict, List, Optional, Union
 from haystack.dataclasses import ChatMessage
+from haystack.utils import ComponentDevice
 from haystack import component
 import json
 import os
@@ -94,7 +95,7 @@ QDRANT_ADDR="http://localhost:6333"
 client = qdrant_client.QdrantClient(
     url = QDRANT_ADDR
 )
-text_embeder = SentenceTransformersTextEmbedder(model="WhereIsAI/UAE-Large-V1")
+text_embeder = SentenceTransformersTextEmbedder(model="WhereIsAI/UAE-Large-V1", device=ComponentDevice.from_str("cpu"))
 text_embeder.warm_up()
 
 
@@ -132,7 +133,8 @@ class QueryLint(object):
             query_pipeline.add_component("llm", OpenAIChatGenerator(model="gpt-3.5-turbo",generation_kwargs={"tools": lint_tools}))
         else:
             #vllm is compatible to openai API.
-            query_pipeline.add_component("llm", OpenAIChatGenerator(model="deepseek-ai/deepseek-coder-7b-instruct-v1.5", api_base_url=self.api_base_url))
+            #we can use FAKE api_key
+            query_pipeline.add_component("llm", OpenAIChatGenerator(api_key="FAKE", model="deepseek-ai/deepseek-coder-7b-instruct-v1.5", api_base_url=self.api_base_url))
 
 
         query_pipeline.connect("prompt_builder", "prompt_convert")

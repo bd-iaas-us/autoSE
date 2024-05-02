@@ -1,6 +1,7 @@
 #vllm
 qdrant-haystack
 haystack-ai
+sentence_transformers
 fastapi[all]
 requests
 gradio
