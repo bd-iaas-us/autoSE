@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
+from issue import handle_prompt
+
 
 from logger import init_logger
 logger = init_logger(__name__)
@@ -48,7 +50,32 @@ async def supported_topics() -> Response:
     Get the list of supported topics
     """
     return JSONResponse(status_code=200, content={"topics": suppported_topics()})
+
+
+@app.post("/dev", dependencies=[Depends(veriy_header)])
+async def dev(request: Request) -> Response:
+    """
+    API for handle "dev" sub command
+    Currently only the following tasks supported:
+        1. Project based prompt:
+        {
+            "repo": "your repo url",
+            "token": "you token to access the repo",
+            "prompt": "your prompt"
+        }
+    """
     
+    try:
+        request_dict = await request.json()
+
+        # Check if the request is for a project based prompt
+        if "prompt" in request_dict:
+            return handle_prompt(request_dict)
+
+        return JSONResponse(status_code=400, content={'message': f"The request must contain prompt"})
+    except Exception as e:
+        return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
+
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
 async def query(request: Request) -> Response:

@@ -8,3 +8,5 @@ gradio=4.3.0
 streamlit
 watchdog
 streamlit_authenticator
+pygithub
+gitpython
