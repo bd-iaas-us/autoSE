@@ -2,8 +2,10 @@ use anyhow::{anyhow, Result};
 use april::llm_client;
 use april::utils::git;
 use april::utils::markdown;
+use april::utils::markdown::MarkdownRender;
 use april::utils::spinner;
 use clap::{Parser, Subcommand};
+
 use log::{debug, warn};
 use serde::Deserialize;
 use std::fmt;
@@ -64,7 +66,6 @@ impl fmt::Display for Risk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let theme =
             bincode::deserialize_from(markdown::DARK_THEME).expect("Invalid builtin light theme");
-
         let mut options = markdown::RenderOptions::default();
         options.theme = Some(theme);
         options.truecolor = true;
@@ -81,7 +82,9 @@ impl fmt::Display for Risk {
 
 #[derive(Debug, Deserialize)]
 struct Risks {
-    risks: Vec<Risk>,
+    risks: Vec<Risk>,    //openai could return structual data
+    plain_risks: String, //other LLM will returna un-structual data
+    backend: String,     //enum:openai or custom
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,14 +128,25 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
 
     match llm_client::query(api_url, api_key, &project_name, &code) {
         Ok(msg) => {
+            //close the fancy spinner.
             let _ = tx.send(());
             let _ = handler.join();
+
+            //parse returned json
             match serde_json::from_str::<Risks>(&msg) {
                 Ok(risks) => {
-                    //close the fancy spinner.
-                    let _ = tx.send(());
-                    for risk in risks.risks {
-                        println!("{}", risk);
+                    if risks.backend == "openai" {
+                        for risk in risks.risks {
+                            println!("{}", risk);
+                        }
+                    } else {
+                        let theme = bincode::deserialize_from(markdown::DARK_THEME)
+                            .expect("Invalid builtin light theme");
+                        let mut options = markdown::RenderOptions::default();
+                        options.theme = Some(theme);
+                        options.truecolor = true;
+                        let mut render = markdown::MarkdownRender::init(options).unwrap();
+                        println!("{}", render.render(&risks.plain_risks));
                     }
                 }
                 Err(_) => {
@@ -141,6 +155,8 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
             }
         }
         Err(e) => {
+            let _ = tx.send(());
+            let _ = handler.join();
             println!("request service error: {}", e);
         }
     }

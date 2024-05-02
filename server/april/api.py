@@ -66,8 +66,7 @@ async def query(request: Request) -> Response:
     try: 
         ai = os.getenv("AI_BACKEND")
         #print(ai, topic, query)
-        ql = QueryLint()
-        llm_response = ql.query_lint(ai, topic, code)
+        llm_response = QueryLint(ai).query_lint(topic, code)
     except Exception as e:
         return JSONResponse(status_code=500, content={'message': f"internal error: {e}"})
 
@@ -75,12 +74,18 @@ async def query(request: Request) -> Response:
         #llm_respnose is json-encode string returned from openai
         #response = {"risks":[{"which_part_of_code":"here", "reason":"why", "fix":"how"}, {"which_part_of_code":"here1", "reason":"why2", "fix":"how2"}]}
         response = json.loads(llm_response)
-        print(response)
+        response["backend"] = ai
+        response["plain_risks"] = ""
+        logger.debug(response)
         return JSONResponse(content=response)
     else:
-        return handle_custom_response()
+        response = {}
+        response["backend"] = ai
+        response["plain_risks"] = llm_response
+        response["risks"] = []
+        return JSONResponse(content=response)
 
-
+#TODO: if llm returns a plain text. maybe we could parse it into a vector of risks.
 def handle_custom_response(llm_response, ai):
     #debug
     answer = llm_response.response

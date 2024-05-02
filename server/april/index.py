@@ -106,37 +106,55 @@ def suppported_topics():
     return [cd.name for cd in client.get_collections().collections]
 
 class QueryLint(object):
-    def __init__(self):
+    def __init__(self, ai):
         #check ai backend
-        ai = os.environ["AI_BACKEND"]
-        if not ai:
+        self.ai = ai
+        if not self.ai:
             raise Exception("AI_BACKEND not specifiled")
-        if ai == "openai" and "OPENAI_API_KEY" not in os.environ:
-            raise Exception("openai should have env OPENAI_API_KEY")
+        if self.ai == "openai":
+            self.api_base_url = None
+            if "OPENAI_API_KEY" not in os.environ:
+                raise Exception("openai should have env OPENAI_API_KEY")
+        if self.ai == "custom":
+            self.api_base_url = "http://localhost:8081/v1"
+            pass
+
     @staticmethod
     def topic_exist(topic) -> bool:
         return topic in [cd.name for cd in client.get_collections().collections]
 
-    @staticmethod
-    def _build_query_pipe(ai:str, ):
+    def _build_query_pipe(self, ai:str, ):
         query_pipeline = Pipeline()
         query_pipeline.add_component("prompt_builder", PromptBuilder(template=templates[ai]))
         query_pipeline.add_component("prompt_convert", PromptConvert())
-        query_pipeline.add_component("llm", OpenAIChatGenerator(generation_kwargs={"tools": lint_tools}))
+        if self.ai == "openai":
+            #only openai supports function call.
+            query_pipeline.add_component("llm", OpenAIChatGenerator(model="gpt-3.5-turbo",generation_kwargs={"tools": lint_tools}))
+        else:
+            #vllm is compatible to openai API.
+            query_pipeline.add_component("llm", OpenAIChatGenerator(model="deepseek-ai/deepseek-coder-7b-instruct-v1.5", api_base_url=self.api_base_url))
+
 
         query_pipeline.connect("prompt_builder", "prompt_convert")
         query_pipeline.connect("prompt_convert", "llm")
         return query_pipeline
     
-    @staticmethod
-    def _build_rag_query_pipe(ai:str, document_store: QdrantDocumentStore):
+    def _build_rag_query_pipe(self, ai:str, document_store: QdrantDocumentStore):
         query_pipeline = Pipeline()
 
         query_pipeline.add_component("text_embedder",text_embeder)
         query_pipeline.add_component("retriever", QdrantEmbeddingRetriever(document_store=document_store))
         query_pipeline.add_component("prompt_builder", PromptBuilder(template=templates[ai]))
         query_pipeline.add_component("prompt_convert", PromptConvert())
-        query_pipeline.add_component("llm", OpenAIChatGenerator(generation_kwargs={"tools": lint_tools}))
+
+
+        if self.ai == "openai":
+            #only openai supports function call.
+            query_pipeline.add_component("llm", OpenAIChatGenerator(model="gpt-3.5-turbo",generation_kwargs={"tools": lint_tools}))
+        else:
+            #vllm is compatible to openai API.
+            query_pipeline.add_component("llm", OpenAIChatGenerator(model="deepseek-ai/deepseek-coder-7b-instruct-v1.5", api_base_url=self.api_base_url))
+
 
         query_pipeline.connect("text_embedder.embedding", "retriever.query_embedding")
         query_pipeline.connect("retriever", "prompt_builder.documents")
@@ -144,14 +162,14 @@ class QueryLint(object):
         query_pipeline.connect("prompt_convert", "llm")
         return query_pipeline
     
-    def _query_rag(self, ai: str, topic: str, code: str):
+    def _query_rag(self, topic: str, code: str):
         #BUG: this QdrantDocumentStore will ALWAYS create collection
         document_store = QdrantDocumentStore(
            QDRANT_ADDR,
            embedding_dim=1024,
            index = topic,
         )
-        query_pipeline = self._build_rag_query_pipe(ai, document_store)
+        query_pipeline = self._build_rag_query_pipe(self.ai, document_store)
         result = query_pipeline.run({
                 "text_embedder": {"text": code},
                 "retriever": {"top_k": 3},
@@ -159,8 +177,10 @@ class QueryLint(object):
         })
         return self.handle_response(result)
 
-    @staticmethod
-    def handle_response(result):
+    def handle_response(self, result) -> str:
+        if self.ai != "openai":
+            return result["llm"]["replies"][0].content
+        #only one funciton is called for extracting data.
         function_call = json.loads(result["llm"]["replies"][0].content)[0]
         logger.debug(function_call)
         function_args = function_call['function']['arguments']
@@ -170,24 +190,23 @@ class QueryLint(object):
         return function_args
 
 
-    def _query(self, ai: str, code: str):
-        query_pipeline = self._build_query_pipe(ai)
+    def _query(self, code: str):
+        query_pipeline = self._build_query_pipe(self.ai)
         result = query_pipeline.run({
             "prompt_builder" :{"code": code, "documents": []}
         })
         return self.handle_response(result)
 
         
-    def query_lint(self, ai :str, topic: str, code :str):
+    def query_lint(self, topic: str, code :str):
         if self.topic_exist(topic):
-            return self._query_rag(ai, topic, code)
+            return self._query_rag(topic, code)
         
-        return self._query(ai, code)
+        return self._query(code)
 
 
 if __name__ == "__main__":
     with open("../../client/april/src/llm_client.rs") as f:
         code = f.read()
-    os.environ["AI_BACKEND"] = "openai"
-    index = QueryLint()
-    print(index.query_lint("openai", "XXX", code))
+    index = QueryLint("custom")
+    print(index.query_lint("XXX", code))
