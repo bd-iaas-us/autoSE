@@ -4,9 +4,9 @@ haystack-ai==2.0.1
 sentence-transformers==2.7.0
 fastapi==0.110.2
 requests==2.31.0
-gradio=4.3.0
 streamlit
 watchdog
 streamlit_authenticator
 pygithub
 gitpython
+websockets_routes

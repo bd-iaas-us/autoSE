@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
-from issue import handle_prompt
-
+from issue import handle_prompt, handle_status
+from websocket import WebSocketServer
 
 from logger import init_logger
 logger = init_logger(__name__)
@@ -53,7 +53,7 @@ async def supported_topics() -> Response:
 
 
 @app.post("/dev", dependencies=[Depends(veriy_header)])
-async def dev(request: Request) -> Response:
+async def createPromptTask(request: Request) -> Response:
     """
     API for handle "dev" sub command
     Currently only the following tasks supported:
@@ -76,6 +76,12 @@ async def dev(request: Request) -> Response:
     except Exception as e:
         return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
 
+@app.get("/dev/tasks/{taskId}/status", dependencies=[Depends(veriy_header)])
+async def getTaskStatus(taskId) -> Response:
+    try: 
+        return handle_status(taskId)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'message': f"internal server error: {e}"})
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
 async def query(request: Request) -> Response:
@@ -127,4 +133,5 @@ def handle_custom_response(llm_response, ai):
 #uvicorn --reload --port 8000 api:app
 #TODO add arguments
 if __name__ == "__main__":
+    asyncio.run(WebSocketServer())
     uvicorn.run(app, host="127.0.0.1", port=8000)
