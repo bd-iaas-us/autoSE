@@ -1,3 +1,5 @@
+#
+#start service: streamlit run uix.py --browser.gatherUsageStats false --server.port 8080 --server.address  0.0.0.0
 import streamlit as st
 import os
 import json
