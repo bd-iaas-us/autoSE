@@ -5,14 +5,16 @@ use april::utils::markdown;
 use april::utils::markdown::MarkdownRender;
 use april::utils::spinner;
 use clap::{Parser, Subcommand};
-
 use log::{debug, warn};
 use serde::Deserialize;
 use std::fmt;
 use std::fs::File;
-use std::fs::OpenOptions;
 use std::io::Read;
+use std::io::{self, Write};
 use std::sync::mpsc;
+use websocket::message::OwnedMessage;
+use websocket::ClientBuilder;
+use websocket::Message;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -166,7 +168,37 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
 
 //TODO:
 fn dev(description: &str) -> Result<()> {
-    println!("not implemented");
+    // println!("not implemented");
+    // Ok(())
+
+    let server_addr = "ws://127.0.0.1:8000/ws";
+
+    let client = ClientBuilder::new(server_addr)
+        .unwrap()
+        .connect_insecure()
+        .unwrap();
+
+    let (mut receiver, mut sender) = client.split().unwrap();
+
+    // 创建一个线程来处理接收到的消息
+    for message in receiver.incoming_messages() {
+        let message = message.unwrap();
+
+        match message {
+            OwnedMessage::Close(_) => {
+                let _ = sender.send_message(&Message::close());
+                break;
+            }
+            // OwnedMessage::Ping(ping) => {
+            //     let _ = sender.send_message(&Message::pong(ping));
+            // }
+            OwnedMessage::Text(text) => {
+                println!("Received message: {}", text);
+            }
+            _ => {}
+        }
+    }
+
     Ok(())
 }
 

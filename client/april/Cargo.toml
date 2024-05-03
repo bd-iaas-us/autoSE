@@ -25,3 +25,4 @@ syntect = "5.2.0"
 ansi_colours = "1.2.2"
 bincode = "1.3.3"
 textwrap = "0.16.1"
+websocket = {version="0.27.1", features = ["sync"]}
