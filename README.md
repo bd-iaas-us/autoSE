@@ -1,3 +1,4 @@
+![](https://github.com/bd-iaas-us/AILint/actions/workflows/ci.yml/badge.svg)
 # AILint
 AILint is a LLM-backed Linter. It scans a file or a git diff to identify potential code problems, and offer suggestions. 
 
