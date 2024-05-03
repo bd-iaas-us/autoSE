@@ -29,10 +29,14 @@ Context information is below.
 ---------------------
 Given the context information and not prior knowledge
 {% endif %}
-try to find ALL posssble coding risks in the following code.(do not find bugs,risks in context):
+you are a code reviewer, try your best to  identify *ALL*  possible code risks or errors, you must obey the following rules:
+1. For the code section, MUST show origin code in code section. so I could find where exactly the code is.
+2. For the reason describe them as much detail as possible. and give reference web url to justify.
+3. For the fix section, always show the fixed code directly as an example instead of general ideas.
 ---------------------
 {{code}}
 ---------------------
+
 """
 
 
