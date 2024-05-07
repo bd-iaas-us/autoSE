@@ -5,6 +5,7 @@ use april::utils::markdown;
 use april::utils::markdown::MarkdownRender;
 use april::utils::spinner;
 use clap::{Parser, Subcommand};
+use lazy_static::lazy_static;
 use log::{debug, warn};
 use serde::Deserialize;
 use std::fmt;
@@ -12,6 +13,7 @@ use std::fs::File;
 use std::io::Read;
 use std::io::{self, Write};
 use std::sync::mpsc;
+use std::sync::Mutex;
 use websocket::message::OwnedMessage;
 use websocket::ClientBuilder;
 use websocket::Message;
@@ -63,15 +65,22 @@ struct Risk {
     fix: String,
 }
 
-//TODO: should have better highlight.
-impl fmt::Display for Risk {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+lazy_static! {
+    static ref RENDER: Mutex<markdown::MarkdownRender> = {
         let theme =
             bincode::deserialize_from(markdown::DARK_THEME).expect("Invalid builtin light theme");
         let mut options = markdown::RenderOptions::default();
         options.theme = Some(theme);
         options.truecolor = true;
-        let mut render = markdown::MarkdownRender::init(options).unwrap();
+        let render = markdown::MarkdownRender::init(options).unwrap();
+        Mutex::new(render)
+    };
+}
+
+//TODO: should have better highlight.
+impl fmt::Display for Risk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut render = RENDER.lock().unwrap();
         write!(
             f,
             "Code  :{}\nReason:{}\nFix   :{}\n",
@@ -134,7 +143,7 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
             let _ = tx.send(());
             let _ = handler.join();
 
-            //parse returned json
+            //return 200
             match serde_json::from_str::<Risks>(&msg) {
                 Ok(risks) => {
                     if risks.backend == "openai" {
@@ -142,12 +151,7 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
                             println!("{}", risk);
                         }
                     } else {
-                        let theme = bincode::deserialize_from(markdown::DARK_THEME)
-                            .expect("Invalid builtin light theme");
-                        let mut options = markdown::RenderOptions::default();
-                        options.theme = Some(theme);
-                        options.truecolor = true;
-                        let mut render = markdown::MarkdownRender::init(options).unwrap();
+                        let mut render = RENDER.lock().unwrap();
                         println!("{}", render.render(&risks.plain_risks));
                     }
                 }
@@ -180,10 +184,8 @@ fn dev(description: &str) -> Result<()> {
 
     let (mut receiver, mut sender) = client.split().unwrap();
 
-    // 创建一个线程来处理接收到的消息
     for message in receiver.incoming_messages() {
         let message = message.unwrap();
-
         match message {
             OwnedMessage::Close(_) => {
                 let _ = sender.send_message(&Message::close());

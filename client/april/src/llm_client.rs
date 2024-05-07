@@ -55,6 +55,7 @@ pub fn query(url: &str, api_key: &str, topic: &str, code: &str) -> Result<String
         serde_json::to_vec(&message).unwrap(),
     );
     request.headers.insert("Authorization", api_key);
+    request.headers.insert("Content-Type", "application/json");
 
     let (sender, receiver) = channel::<std::result::Result<ehttp::Response, String>>();
 
@@ -65,6 +66,9 @@ pub fn query(url: &str, api_key: &str, topic: &str, code: &str) -> Result<String
     match receiver.recv()? {
         Ok(response) => {
             let txt = response.text().ok_or(CustomError::BodyMissing)?;
+            if response.status != 200 {
+                return Err(CustomError::HttpError(txt.to_owned()));
+            }
             Ok(txt.to_string())
         }
         Err(e) => Err(CustomError::HttpError(e)),

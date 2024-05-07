@@ -2,6 +2,8 @@ from index import QueryLint, suppported_topics
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from contextlib import asynccontextmanager
+from typing import Union, List, Any
+from pydantic import BaseModel
 
 import uvicorn
 import json
@@ -48,54 +50,46 @@ async def supported_topics() -> Response:
     Get the list of supported topics
     """
     return JSONResponse(status_code=200, content={"topics": suppported_topics()})
-    
+
+
+class LintRequest(BaseModel):
+    topic: str
+    code: str
+
+class LintResponse(BaseModel):
+    backend: str
+    plain_risks : str
+    risks : dict
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
-async def query(request: Request) -> Response:
+async def query(req :LintRequest) -> LintResponse:
     """
-    Query the LLM model with the given query and return the response
-    returns {"message": "response", "refs": ["file1", "file2", ...]}
+    test: curl -X POST "http://127.0.0.1:8000/lint" -H "Content-Type: application/json" -d '{"topic": "your_topic", "code": "your_code"}'
+    request: Lint
+    response: {}
     """
+    logger.debug(LintRequest)
     try: 
-        request_dict = await request.json()
-        topic = request_dict.pop("topic")
-        code = request_dict.pop("code")
+        ai = os.environ["AI_BACKEND"]
+        llm_response = QueryLint(ai).query_lint(req.topic, req.code)
+        #llm_response = '''{"risks":[{"which_part_of_code":"here", "reason":"why", "fix":"how"}, {"which_part_of_code":"here1", "reason":"why2", "fix":"how2"}]}'''
     except Exception as e:
-        return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
-    
-    try: 
-        ai = os.getenv("AI_BACKEND")
-        #print(ai, topic, query)
-        llm_response = QueryLint(ai).query_lint(topic, code)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={'message': f"internal error: {e}"})
+        raise HTTPException(status_code=500, detail = f"{e}")
 
+    response = LintResponse(backend=ai, plain_risks="", risks={})
     if ai == "openai":
         #llm_respnose is json-encode string returned from openai
         #response = {"risks":[{"which_part_of_code":"here", "reason":"why", "fix":"how"}, {"which_part_of_code":"here1", "reason":"why2", "fix":"how2"}]}
-        response = json.loads(llm_response)
-        response["backend"] = ai
-        response["plain_risks"] = ""
+        response.backend = ai
+        response.plain_risks = ""
+        response.risks = json.loads(llm_response)["risks"]
         logger.debug(response)
-        return JSONResponse(content=response)
     else:
-        response = {}
-        response["backend"] = ai
-        response["plain_risks"] = llm_response
-        response["risks"] = []
-        return JSONResponse(content=response)
-
-#TODO: if llm returns a plain text. maybe we could parse it into a vector of risks.
-def handle_custom_response(llm_response, ai):
-    #debug
-    answer = llm_response.response
-    #filter the answer from the response
-    #find the location of 'Answer: \n" in the response, and return the text after that
-    keyword = "Answer: \n" #keyword comes from the prompt template in llama.index. this keyword may change.
-    response = {}
-    response["message"] = answer[answer.find(keyword) + len(keyword):]
-    response["refs"] = [value['file_name'] for value in llm_response.metadata.values()]
+        response.backend = ai
+        response.plain_risks = llm_response
+        response.risks = {}
     return response
+
 
 #uvicorn --reload --port 8000 api:app
 #TODO add arguments
