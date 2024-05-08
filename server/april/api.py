@@ -59,7 +59,7 @@ class LintRequest(BaseModel):
 class LintResponse(BaseModel):
     backend: str
     plain_risks : str
-    risks : dict
+    risks : List
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
 async def query(req :LintRequest) -> LintResponse:
@@ -76,7 +76,7 @@ async def query(req :LintRequest) -> LintResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail = f"{e}")
 
-    response = LintResponse(backend=ai, plain_risks="", risks={})
+    response = LintResponse(backend=ai, plain_risks="", risks=[])
     if ai == "openai":
         #llm_respnose is json-encode string returned from openai
         #response = {"risks":[{"which_part_of_code":"here", "reason":"why", "fix":"how"}, {"which_part_of_code":"here1", "reason":"why2", "fix":"how2"}]}
@@ -87,7 +87,7 @@ async def query(req :LintRequest) -> LintResponse:
     else:
         response.backend = ai
         response.plain_risks = llm_response
-        response.risks = {}
+        response.risks = []
     return response
 
 
