@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 import json
-import asyncio
+import time
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -76,7 +76,7 @@ async def createPromptTask(request: Request) -> Response:
     except Exception as e:
         return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
 
-@app.get("/dev/tasks/{taskId}/status", dependencies=[Depends(veriy_header)])
+@app.get("/dev/tasks/{taskId}", dependencies=[Depends(veriy_header)])
 async def getTaskStatus(taskId) -> Response:
     try: 
         return handle_status(taskId)
@@ -86,6 +86,16 @@ async def getTaskStatus(taskId) -> Response:
 @app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getHistory(taskId, request: Request) -> StreamingResponse:
     return StreamingResponse(gen_history_data(taskId, request.url))
+    #return StreamingResponse(fake_generator())
+
+
+#debug only
+async def fake_generator():
+    for i in range(10):
+        yield  f"data chunk{i}\n"
+        print(f"data chunk{i}")
+        time.sleep(1)
+    
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
 async def query(request: Request) -> Response:

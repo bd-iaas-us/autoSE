@@ -1,20 +1,17 @@
 use anyhow::{anyhow, Result};
 use april::llm_client;
+use april::llm_client::history;
 use april::utils::git;
 use april::utils::markdown;
-use april::utils::markdown::MarkdownRender;
 use april::utils::spinner;
 use clap::{Parser, Subcommand};
 use log::{debug, warn};
 use serde::Deserialize;
 use std::fmt;
 use std::fs::File;
+use std::io::BufReader;
 use std::io::Read;
-use std::io::{self, Write};
 use std::sync::mpsc;
-use websocket::message::OwnedMessage;
-use websocket::ClientBuilder;
-use websocket::Message;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -48,9 +45,12 @@ enum Commands {
 
     /// given a description, wrote a patch.
     Dev {
-        /// Detail level
+        /// yaml file describe the task
         #[clap(index = 1)]
-        description: String,
+        description_filename: Option<String>,
+        /// read remote tasks' log
+        #[arg(long, short)]
+        follow: Option<String>,
     },
 }
 
@@ -128,7 +128,7 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
     let (tx, rx) = mpsc::channel();
     let handler = spinner::run_spinner("Generating", rx);
 
-    match llm_client::query(api_url, api_key, &project_name, &code) {
+    match llm_client::lint(api_url, api_key, &project_name, &code) {
         Ok(msg) => {
             //close the fancy spinner.
             let _ = tx.send(());
@@ -166,40 +166,54 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+struct DevTask {
+    repo: String,
+    description: String,
+    token: Option<String>,
+}
+
 //TODO:
-fn dev(description: &str) -> Result<()> {
-    // println!("not implemented");
-    // Ok(())
+fn dev(
+    description_filename: Option<String>,
+    follow: Option<String>,
+    api_url: &str,
+    api_key: &str,
+) -> Result<()> {
+    let display_history = |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
+        Ok(s) => print!("{}", s),
+        Err(_) => {}
+    };
 
-    let server_addr = "ws://127.0.0.1:8000/ws";
+    //follow mode
+    if let Some(uuid) = follow {
+        llm_client::history(api_url, api_key, &uuid, display_history);
+        Ok(())
+    //submit task and follow
+    } else if let Some(desc_filename) = description_filename {
+        let file = File::open(desc_filename).expect("Failed to open file");
+        let reader = BufReader::new(file);
+        let task: DevTask = serde_yaml::from_reader(reader).expect("Failed to parse YAML");
 
-    let client = ClientBuilder::new(server_addr)
-        .unwrap()
-        .connect_insecure()
-        .unwrap();
-
-    let (mut receiver, mut sender) = client.split().unwrap();
-
-    // 创建一个线程来处理接收到的消息
-    for message in receiver.incoming_messages() {
-        let message = message.unwrap();
-
-        match message {
-            OwnedMessage::Close(_) => {
-                let _ = sender.send_message(&Message::close());
-                break;
-            }
-            // OwnedMessage::Ping(ping) => {
-            //     let _ = sender.send_message(&Message::pong(ping));
-            // }
-            OwnedMessage::Text(text) => {
-                println!("Received message: {}", text);
-            }
-            _ => {}
-        }
+        let repo = &task.repo;
+        let token = match task.token {
+            Some(token) => token,
+            None => "".to_string(),
+        };
+        let desc = task.description;
+        /*
+        //read local yml file. get this paramters.
+        let repo = "https://github.com/bd-iaas-us/AILint.git";
+        let token = "FAKE_TOKEN";
+        */
+        debug!("{},{},{}", repo, token, desc);
+        let uuid = llm_client::dev(api_url, api_key, &repo, &token, &desc)?;
+        llm_client::history(api_url, api_key, &uuid, display_history);
+        Ok(())
+    } else {
+        println!("print usage");
+        Ok(())
     }
-
-    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -207,7 +221,10 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Dev { description } => dev(&description),
+        Commands::Dev {
+            description_filename,
+            follow,
+        } => dev(description_filename, follow, &cli.api_url, &cli.api_key),
         Commands::Lint {
             file_name,
             diff_mode,
