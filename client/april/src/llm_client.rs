@@ -1,28 +1,31 @@
+use anyhow::{anyhow, Result};
 use ehttp;
 use log::debug;
 use serde_json::json;
 use std::ops::ControlFlow;
 use std::sync::mpsc::channel;
-use std::sync::mpsc::RecvError;
-use std::thread;
-use std::time::Duration;
-use thiserror::Error;
 
+/*
+use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum CustomError {
-    #[error("internal channel error")]
+    #[error("internal channel error {0}")]
     InternalError(#[from] RecvError),
+
     #[error("invalid parameters")]
     InvalidParameters,
+
     #[error("env error")]
     EnvError(#[from] std::env::VarError),
+
     #[error("http error {0}")]
     HttpError(String),
+
     #[error("response body is missing")]
     BodyMissing,
 }
-
 pub type Result<T> = std::result::Result<T, CustomError>;
+*/
 
 fn block_fetching(request: ehttp::Request) -> Result<String> {
     let (sender, receiver) = channel::<std::result::Result<ehttp::Response, String>>();
@@ -31,16 +34,17 @@ fn block_fetching(request: ehttp::Request) -> Result<String> {
         sender.send(response).unwrap();
     });
 
-    match receiver.recv()? {
-        Ok(response) => {
-            let txt = response.text().ok_or(CustomError::BodyMissing)?;
-            if response.status != 200 {
-                return Err(CustomError::HttpError(txt.to_owned()));
-            }
-            Ok(txt.to_string())
-        }
-        Err(e) => Err(CustomError::HttpError(e)),
+    let response = receiver.recv()?.map_err(|e| anyhow!(e))?;
+
+    let txt = response
+        .text()
+        .ok_or(anyhow!("response's body is empty. check the server"))?;
+
+    if response.status != 200 {
+        return Err(anyhow!("remote service returns {}", response.status));
     }
+
+    Ok(txt.to_string())
 }
 
 pub fn supported_topics(url: &str, api_key: &str) -> Result<String> {
@@ -49,7 +53,6 @@ pub fn supported_topics(url: &str, api_key: &str) -> Result<String> {
 
     block_fetching(request)
 }
-
 pub fn dev(url: &str, api_key: &str, repo: &str, token: &str, desc: &str) -> Result<String> {
     let message = json!({
                          "repo": repo,
@@ -67,21 +70,33 @@ pub fn dev(url: &str, api_key: &str, repo: &str, token: &str, desc: &str) -> Res
 }
 
 pub fn status(url: &str, api_key: &str, id: &str) -> Result<String> {
-    let mut request = ehttp::Request::get(format!("{}/dev/tasks/{}/", url, id).as_str());
+    let mut request = ehttp::Request::get(format!("{}/dev/tasks/{}/status", url, id).as_str());
     request.headers.insert("Authorization", api_key);
     request.headers.insert("Content-Type", "application/json");
     block_fetching(request)
 }
 
-pub fn history(url: &str, api_key: &str, id: &str, callback: impl Fn(&Vec<u8>) + Send + 'static) {
-    let mut request = ehttp::Request::get(format!("{}/stream", url).as_str());
+pub fn history(
+    url: &str,
+    api_key: &str,
+    id: &str,
+    callback: impl Fn(&Vec<u8>) + Send + 'static,
+) -> Result<()> {
+    let mut request = ehttp::Request::get(format!("{}/dev/histories/{}", url, id,).as_str());
     request.headers.insert("Authorization", api_key);
     request.headers.insert("Content-Type", "application/json");
 
-    let (tx, rx) = channel::<()>();
+    //send result in channel
+    let (tx, rx) = channel::<Result<()>>();
 
     ehttp::streaming::fetch(request, move |part| {
-        let part = part.unwrap();
+        let part = match part {
+            Ok(part) => part,
+            Err(e) => {
+                let _ = tx.send(Err(anyhow!("fetch part failed: {}", e)));
+                return ControlFlow::Break(());
+            }
+        };
         match part {
             ehttp::streaming::Part::Response(response) => {
                 debug!("history response: {:?}", response)
@@ -90,7 +105,7 @@ pub fn history(url: &str, api_key: &str, id: &str, callback: impl Fn(&Vec<u8>) +
                 debug!("chunk recved {:?}", chunk);
                 if chunk.len() == 0 {
                     //send signal close thread.
-                    let _ = tx.send(());
+                    let _ = tx.send(Ok(()));
                     return ControlFlow::Break(());
                 } else {
                     callback(&chunk);
@@ -100,13 +115,15 @@ pub fn history(url: &str, api_key: &str, id: &str, callback: impl Fn(&Vec<u8>) +
         return ControlFlow::Continue(());
     });
 
-    rx.recv().unwrap();
+    rx.recv()??;
+
+    Ok(())
 }
 
 pub fn lint(url: &str, api_key: &str, topic: &str, code: &str) -> Result<String> {
     //parameters should be non-empty
     if code.is_empty() {
-        return Err(CustomError::InvalidParameters);
+        return Err(anyhow!("code is empty"));
     }
     let message = json!({
                          "code": code,
