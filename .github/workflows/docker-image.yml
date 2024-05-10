@@ -30,6 +30,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: .
-        file: ./server/april/Dockerfile
+        file: Dockerfile
         push: true
-        tags: april:latest
+        tags: thesues/april:latest
+      working-directory: server/april
