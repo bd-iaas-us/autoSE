@@ -70,7 +70,7 @@ pub fn dev(url: &str, api_key: &str, repo: &str, token: &str, desc: &str) -> Res
 }
 
 pub fn status(url: &str, api_key: &str, id: &str) -> Result<String> {
-    let mut request = ehttp::Request::get(format!("{}/dev/tasks/{}/status", url, id).as_str());
+    let mut request = ehttp::Request::get(format!("{}/dev/tasks/{}", url, id).as_str());
     request.headers.insert("Authorization", api_key);
     request.headers.insert("Content-Type", "application/json");
     block_fetching(request)
