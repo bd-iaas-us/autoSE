@@ -216,12 +216,14 @@ def gen_history_data(taskId: str, url: str):
     empty = ""
     logger.info(f'----------- start processing the history for task {task.get_id()} at {datetime.now()}')
     while True:
+        if task.timed_out():
+            logger.info(f'----------- Timed out at: {datetime.now()}, task: {task.get_id()}')
+            return json.dumps(empty)
+
         hist_file_name = task.get_history_file()
         # The file with history data has not been created yet
         if hist_file_name is None:
             time.sleep(1)
-            if task.timed_out():
-                return json.dumps(empty)
             continue
 
         # Load the history data
@@ -242,9 +244,6 @@ def gen_history_data(taskId: str, url: str):
         # If the file is always empty, check time out
         if parsed_json is None:
             time.sleep(1)
-            if task.timed_out():
-                logger.warning(f'task: {task.get_id()} timed out, invalid json')
-                return json.dumps(empty)
             continue
 
         # Send new history data back
@@ -272,10 +271,4 @@ def gen_history_data(taskId: str, url: str):
                 logger.info(f'----------- Submit found, finished processing the history for task {task.get_id()} at {datetime.now()}')
                 task.set_status(TaskStatus.DONE)
                 return json.dumps(empty)
-            
-        if index == last_index:
-            if task.timed_out():
-                logger.info(f'----------- Timed out at: {datetime.now()}, task: {task.get_id()}')
-                return json.dumps(empty)
-
     task.set_status(TaskStatus.Done)
