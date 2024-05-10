@@ -8,3 +8,5 @@ streamlit
 watchdog
 streamlit_authenticator
 uvicorn
+pygithub
+gitpython
