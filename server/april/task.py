@@ -30,6 +30,7 @@ class Task:
         self.last_modified = datetime.now()
         self.history_file = None
         self.patch_file = None
+        self.histories = []
 
 
     def get_id(self):
@@ -93,3 +94,24 @@ class Task:
                 self.status = TaskStatus.TIMED_OUT
                 return True
             return False
+
+    def timed_out2(self, t1, t2):
+        delta = t2 - t2
+        if delta.total_seconds() >= TaskTimedOut:
+            self.status = TaskStatus.TIMED_OUT
+            return True
+        return False
+
+    # entry must be a valid json object
+    def append_history(self, entry: str):
+        with self._lock:
+            self.histories.append(entry)
+
+    def get_history_len(self):
+        return len(self.histories)
+
+    def get_history(self, index):
+        return self.histories[index]
+
+    def clear_history(self):
+        self.histories.clear()

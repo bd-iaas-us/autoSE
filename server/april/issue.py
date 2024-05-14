@@ -10,8 +10,7 @@ from urllib.parse import urlparse
 from task import Task, TaskStatus
 from datetime import datetime
 import time
-from github import Github
-
+import git
 import threading
 
 swe_dir = '/root/git/SWE-agent'
@@ -62,7 +61,6 @@ class SWEAgent:
         run_main = run.Main(script_args)
         threading.Thread(target=run_main.main).start()
         return os.path.join(swe_dir, run_main.traj_dir)
-
 
 # The function generate a suffix based upon the datetime it is called
 def gen_folder_suffix():
@@ -161,6 +159,15 @@ def handle_task(taskId):
 
     return JSONResponse(status_code=200, content={'status': task.get_status().name, 'patch': patch})
 
+# Only support "https:" scheme for the moment
+def clone_repo(url_obj: str, folder_suffix: str):
+    owner, repo = get_owner_repo(url_obj)
+    repo_exist, repo_folder = get_repo_folder(owner, repo, folder_suffix)
+    if not repo_exist:
+        url = f'{url_obj.scheme}://{url_obj.hostname}/{owner}/{repo}.git'
+        git.Git(repo_folder).clone(url)
+        return True, repo_folder
+    return False, repo_folder
 
 # The handler function for repo prompt
 def handle_prompt(prompt_obj: dict):
@@ -183,12 +190,9 @@ def handle_prompt(prompt_obj: dict):
     add_task(new_task)
 
     folder_suffix = gen_folder_suffix()
-
-    # Clone the project to local
-    owner, repo = get_owner_repo(url_obj)
-    repo_exist, repo_folder = get_repo_folder(owner, repo, folder_suffix)
-    if not repo_exist:
-        Repo.clone_from(prompt_obj["repo"], repo_folder)
+    success, repo_folder = clone_repo(url_obj, folder_suffix)
+    if not success:
+        return JSONResponse(status_code=400, content={'message': "The repo specified exists or cannot be cloned"})
 
     prompt_file_name = f'{repo_folder}/prompt_{new_task.get_id()}.txt'
     with open(prompt_file_name, "w") as prompt_file:
@@ -200,7 +204,6 @@ def handle_prompt(prompt_obj: dict):
     agent = SWEAgent(prompt_file_name, repo_folder)
     result_dir = agent.run()
     new_task.set_data_dir(result_dir)
-
 
     return JSONResponse(status_code=200, content={"task_id": new_task.get_id()})
 
@@ -272,3 +275,70 @@ def gen_history_data(taskId: str, url: str):
                 task.set_status(TaskStatus.DONE)
                 return json.dumps(empty)
     task.set_status(TaskStatus.Done)
+
+def feed_history(task):
+    data = {}
+    for i in range(10):
+        data["role"] = "assistant"
+        data["thought"] = f'fake thought {i}'
+        data["content"] = f'fake content {i}'
+        if i == 9:
+            data["action"] = 'submit'
+        else:
+            data["action"] = "fake action"
+        logger.info(f'generate history data {i} at: {datetime.now()}')
+        task.append_history(json.dumps(data, indent = 4))
+        time.sleep(1)
+
+def start_feed(taskId):
+    task = get_task(taskId)
+    task.clear_history()
+    thread = Thread(target = feed_history, args = (task, ))
+    thread.daemon = True
+    thread.start()
+
+# NOTE: The function can not be called with gen_history_data at the same time
+def gen_history_data_v2(taskId: str, url: str):
+    # Testing code, keep it here temporarily
+    #start_feed(taskId)
+
+    data = {}
+    task = get_task(taskId)
+    if task is None:
+        return json.dumps(data)
+
+    # Should be merged to task after the "/dev/histories" retires
+    last_idx = -1
+    last_modified = datetime.now()
+    empty = ""
+    logger.info(f'----------- v2: start processing the history for task {task.get_id()} at {datetime.now()}')
+    while True:
+        if task.timed_out2(datetime.now(), last_modified):
+            logger.info(f'-----------v2: Timed out at: {datetime.now()}, task: {task.get_id()}')
+            return json.dumps(empty)
+
+        for i in range(last_idx + 1, task.get_history_len()):
+            try: 
+                item = json.loads(task.get_history(i))
+                if item is None or item["role"] != "assistant":
+                    continue
+                last_idx += 1
+                last_modified = datetime.now()
+
+                data["role"] = item["role"]
+                data["thought"] = item["thought"]
+                data["content"] = item["content"]
+                logger.info(f'----yield data at {datetime.now()}')
+                yield json.dumps(data, indent = 4)
+
+                # If the action contain "submit", finished
+                action = item["action"]
+                if action is not None and "submit" in action:
+                    logger.info(f'----------- Submit found, finished processing the history for task {task.get_id()} at {datetime.now()}')
+                    task.set_status(TaskStatus.DONE)
+                    return json.dumps(empty)
+
+            except Exception as e:
+                logger.warning(f'file is not in json format, {e}')
+                time.sleep(1)
+

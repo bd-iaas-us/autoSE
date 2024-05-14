@@ -13,9 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
-from issue import handle_prompt, handle_task, gen_history_data
-
-
+from issue import handle_prompt, handle_task, gen_history_data, gen_history_data_v2
 from logger import init_logger
 logger = init_logger(__name__)
 
@@ -97,6 +95,11 @@ async def getTask(taskId) -> Response:
 @app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getHistory(taskId, request: Request) -> StreamingResponse:
     return StreamingResponse(gen_history_data(taskId, request.url))
+
+@app.get("/dev/v2/histories/{taskId}", dependencies=[Depends(veriy_header)])
+async def getHistory(taskId, request: Request) -> StreamingResponse:
+    return StreamingResponse(gen_history_data_v2(taskId, request.url))
+
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
 async def query(req :LintRequest) -> LintResponse:
