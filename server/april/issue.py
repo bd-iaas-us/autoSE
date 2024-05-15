@@ -8,7 +8,8 @@ from git import Repo
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from urllib.parse import urlparse
 from task import Task, TaskStatus
-from datetime import datetime
+from datetime import datetime, timedelta
+
 import time
 import git
 
@@ -159,49 +160,6 @@ def handle_task(taskId):
 
     return JSONResponse(status_code=200, content={'status': task.get_status().name, 'patch': patch})
 
-
-# The handler function for repo prompt
-##def handle_prompt(prompt_obj: dict):
-#    """
-#    The worker function to handle a dev request for a  project based
-#    prompt
-#    The promptObj contains "repo", "token" and "prompt"
-#    """
-#    prompt = prompt_obj["prompt"]
-#    if "repo" not in prompt_obj or prompt is None:
-#        return JSONResponse(status_code=400, content={'message': "The prompt & repo must be present in request"})
-#
-#    logger.info(f'processing prompt: {prompt}')
-#
-#    url_obj = parse_prompt_obj(prompt_obj)
-#    if url_obj is None or url_obj.path is None:
-#        return JSONResponse(status_code=400, content={'message': "The repo specified is invalid"})
-#
-#    new_task = Task(prompt_obj["prompt"])
-#    add_task(new_task)
-#
-#    folder_suffix = gen_folder_suffix()
-#
-#    # Clone the project to local
-#    owner, repo = get_owner_repo(url_obj)
-#    repo_exist, repo_folder = get_repo_folder(owner, repo, folder_suffix)
-#    if not repo_exist:
-#        Repo.clone_from(prompt_obj["repo"], repo_folder)
-#
-#    prompt_file_name = f'{repo_folder}/prompt_{new_task.get_id()}.txt'
-#    with open(prompt_file_name, "w") as prompt_file:
-#        prompt_file.write(prompt)
-# 
-#    new_task.set_status(TaskStatus.RUNNING)
-#    # Call agent to query
-#
-#    #agent = SWEAgent(prompt_file_name, repo_folder)
-#    #result_dir = agent.run()
-#    #new_task.set_data_dir(result_dir)
-#
-#    return JSONResponse(status_code=200, content={"task_id": new_task.get_id()})
-
-
 # Only support "https:" scheme for the moment
 def clone_repo(url_obj: str, token = None, folder_suffix =""):
     owner, repo = get_owner_repo(url_obj)
@@ -262,77 +220,6 @@ def handle_prompt(prompt_obj: dict):
 
     return JSONResponse(status_code=200, content={"task_id": new_task.get_id()})
 
-
-#def gen_history_data(taskId: str, url: str):
-#    data = {}
-#    task = get_task(taskId)
-#    if task is None:
-#        return json.dumps(data)
-#
-#    # Reset the list history index, also the last modified time for time out purpose
-#    task.set_last_history_idx(-1)
-#    empty = ""
-#    logger.info(f'----------- start processing the history for task {task.get_id()} at {datetime.now()}')
-#    while True:
-#        if task.timed_out():
-#            logger.info(f'----------- Timed out at: {datetime.now()}, task: {task.get_id()}')
-#            return json.dumps(empty)
-#
-#        hist_file_name = task.get_history_file()
-#        # The file with history data has not been created yet
-#        if hist_file_name is None:
-#            time.sleep(1)
-#            continue
-#
-#        # Load the history data
-#        parsed_json = None
-#        with open(hist_file_name) as hist_file:
-#            # Here we directly read the file into memory
-#            file_content = hist_file.read()
-#        if file_content is None:
-#            time.sleep(1)
-#            continue
-#
-#        try: 
-#            parsed_json = json.loads(file_content)
-#        except Exception as e:
-#            logger.warning(f'file is not in json format, {e}')
-#            time.sleep(1)
-#
-#        # If the file is always empty, check time out
-#        if parsed_json is None:
-#            time.sleep(1)
-#            continue
-#
-#        # Send new history data back
-#        index = -1
-#        last_index = task.get_last_history_idx()
-#        for item in parsed_json["history"]:
-#            if item["role"] != "assistant":
-#                continue
-#
-#            if last_index != -1 and index < last_index:
-#                index += 1
-#                continue
-#
-#            index += 1
-#            task.set_last_history_idx(index)
-#
-#            data["role"] = item["role"]
-#            data["thought"] = item["thought"]
-#            data["content"] = item["content"]
-#            data["time"] = datetime.now().strftime("%m%d%Y %H:%M:%S")
-#            yield json.dumps(data, indent = 4)
-#
-#            # If the action contain "submit", finished
-#            action = item["action"]
-#            if action is not None and "submit" in action:
-#                logger.info(f'----------- Submit found, finished processing the history for task {task.get_id()} at {datetime.now()}')
-#                task.set_status(TaskStatus.DONE)
-#                return json.dumps(empty)
-#    task.set_status(TaskStatus.Done)
-
-
 def feed_history(task):
     data = {}
     for i in range(10):
@@ -355,51 +242,36 @@ def start_feed(taskId):
     thread.start()
 
 # NOTE: The function can not be called with gen_history_data at the same time
-def gen_history_data_v2(taskId: str, url: str):
-    # Testing code, keep it here temporarily
-    # start_feed(taskId)
-
-
+def gen_history_data(taskId: str, url: str):
     data = {}
     task = get_task(taskId)
     logger.info(f'get task: {task}')
     if task is None:
         return json.dumps(data)
 
-    # Should be merged to task after the "/dev/histories" retires
     idx = 0
-    last_modified = datetime.now()
-    empty = ""
-    logger.info(f'----------- v2: start processing the history for task {task.get_id()} at {datetime.now()}')
+    last_update = datetime.now()
+    logger.info(f'----------- start processing the history for task {task.get_id()} at {datetime.now()}')
     while True:
-        #if task.timed_out2(datetime.now(), last_modified):
-        #    logger.info(f'-----------v2: Timed out at: {datetime.now()}, task: {task.get_id()}')
-        #    return json.dumps(empty)
-
         n = task.get_history_len()
         if n == idx:
-           logger.info(f"SLEEP, n:{n}, idx:{idx}")
-           time.sleep(1)
+           #logger.debug(f"SLEEP, n:{n}, idx:{idx}")
+           if datetime.now() - last_update > timedelta(minutes=2):
+               logger.warn(f"client waits too long, quit...")
+               return "SERVER TIMEOUT: retry"
+           #TODO: use cond lock to replace time.sleep 
+           time.sleep(0.2)
            continue
-        last_modified = datetime.now()
+        last_update = datetime.now()
         for i in range(idx, n):
-            try: 
-                item = task.get_history(i)
-                # if item is None or item["role"] != "assistant":
-                #     continue
+            item = task.get_history(i)
+            yield str(item["action"])
 
-                yield str(item["action"])
 
-                # If the action contain "submit", finished
-                # action = item["action"]
-                # if action is not None and "submit" in action:
-                #     logger.info(f'----------- Submit found, finished processing the history for task {task.get_id()} at {datetime.now()}')
-                #     task.set_status(TaskStatus.DONE)
-                #     return json.dumps(empty)
-                if "submit" in item["action"]:
-                    return
+            #swe-agent could run into error. in this case. should set status to ERROR
+            if "submit" in item["action"]:
+                task.set_status(TaskStatus.DONE)
+                return
 
-            except Exception as e:
-                logger.fatal(f'file is not in json format, {e}')
         idx = n
 
