@@ -220,27 +220,6 @@ def handle_prompt(prompt_obj: dict):
 
     return JSONResponse(status_code=200, content={"task_id": new_task.get_id()})
 
-def feed_history(task):
-    data = {}
-    for i in range(10):
-        data["role"] = "assistant"
-        data["thought"] = f'fake thought {i}'
-        data["content"] = f'fake content {i}'
-        if i == 9:
-            data["action"] = 'submit'
-        else:
-            data["action"] = "fake action"
-        logger.info(f'generate history data {i} at: {datetime.now()}')
-        task.append_history(json.dumps(data, indent = 4))
-        time.sleep(1)
-
-def start_feed(taskId):
-    task = get_task(taskId)
-    task.clear_history()
-    thread = Thread(target = feed_history, args = (task, ))
-    thread.daemon = True
-    thread.start()
-
 # NOTE: The function can not be called with gen_history_data at the same time
 def gen_history_data(taskId: str, url: str):
     data = {}

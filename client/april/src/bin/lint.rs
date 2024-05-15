@@ -2,22 +2,24 @@ use anyhow::{anyhow, Result};
 use april::llm_client;
 use april::utils::git;
 use april::utils::markdown;
-use april::utils::markdown::MarkdownRender;
 use april::utils::spinner;
 use clap::{Parser, Subcommand};
+use lazy_static::lazy_static;
 use log::{debug, warn};
+use regex::Regex;
 use serde::Deserialize;
 use std::fmt;
 use std::fs::File;
+use std::io::prelude::*;
+use std::io::BufReader;
 use std::io::Read;
-use std::io::{self, Write};
 use std::sync::mpsc;
-use websocket::message::OwnedMessage;
-use websocket::ClientBuilder;
-use websocket::Message;
+use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, arg_required_else_help = true)]
 struct Cli {
     /// API URL to connect to
     #[arg(
@@ -48,9 +50,15 @@ enum Commands {
 
     /// given a description, wrote a patch.
     Dev {
-        /// Detail level
+        /// yaml file describe the task
         #[clap(index = 1)]
-        description: String,
+        description_filename: Option<String>,
+        /// read remote tasks' log
+        #[arg(long, short)]
+        follow: Option<String>,
+        /// get remote tasks' patch
+        #[arg(long, short)]
+        patch: Option<String>,
     },
 }
 
@@ -63,20 +71,30 @@ struct Risk {
     fix: String,
 }
 
-//TODO: should have better highlight.
-impl fmt::Display for Risk {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+lazy_static! {
+    static ref RENDER: Mutex<markdown::MarkdownRender> = {
         let theme =
             bincode::deserialize_from(markdown::DARK_THEME).expect("Invalid builtin light theme");
         let mut options = markdown::RenderOptions::default();
         options.theme = Some(theme);
         options.truecolor = true;
-        let mut render = markdown::MarkdownRender::init(options).unwrap();
+        let render = markdown::MarkdownRender::init(options).unwrap();
+        Mutex::new(render)
+    };
+}
+
+//TODO: should have better highlight.
+impl fmt::Display for Risk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut render = RENDER.lock().unwrap();
         write!(
             f,
-            "Code  :{}\nReason:{}\nFix   :{}\n",
+            "{}  :{}\n{}:{}\n{}   :{}\n",
+            render.render(r#"*Code*"#),
             render.render(&self.which_part_of_code),
+            render.render(r#"*Reason*"#),
             render.render(&self.reason),
+            render.render(r#"*Fix*"#),
             render.render(&self.fix)
         )
     }
@@ -99,61 +117,45 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
     let mut project_name = String::new();
     let mut code = String::new();
     if diff_mode {
-        project_name = match git::get_git_project_name() {
-            Ok(p) => p,
-            Err(e) => {
-                println!("diff mode is only supported for git project");
-                return Err(e);
-            }
-        };
+        project_name = git::get_git_project_name().map_err(|e| {
+            println!("diff mode is only supported for git project");
+            e
+        })?;
         //if file_name is provided in diff_mode, we only lint the file itself.
         //if no file name is provided, we could lint the whole project.
         code = git::get_git_diff(&file_name)?;
     } else
     /* single file mode */
     {
-        match git::get_git_project_name() {
-            Ok(p) => project_name = p,
-            Err(e) => {
-                //if there is no git project.
-            }
-        };
-        if file_name.is_none() {
-            return Err(anyhow!("you should provide a file name to lint"));
-        }
-        let mut file = File::open(file_name.unwrap())?;
+        //project_name could be "" or some project name
+        project_name = git::get_git_project_name().unwrap_or_default();
+
+        let file_name = file_name.ok_or(anyhow!("you should provide a file name to lint"))?;
+        let mut file = File::open(file_name)?;
         file.read_to_string(&mut code)?;
     }
 
     let (tx, rx) = mpsc::channel();
     let handler = spinner::run_spinner("Generating", rx);
 
-    match llm_client::query(api_url, api_key, &project_name, &code) {
+    match llm_client::lint(api_url, api_key, &project_name, &code) {
         Ok(msg) => {
             //close the fancy spinner.
             let _ = tx.send(());
             let _ = handler.join();
 
-            //parse returned json
-            match serde_json::from_str::<Risks>(&msg) {
-                Ok(risks) => {
-                    if risks.backend == "openai" {
-                        for risk in risks.risks {
-                            println!("{}", risk);
-                        }
-                    } else {
-                        let theme = bincode::deserialize_from(markdown::DARK_THEME)
-                            .expect("Invalid builtin light theme");
-                        let mut options = markdown::RenderOptions::default();
-                        options.theme = Some(theme);
-                        options.truecolor = true;
-                        let mut render = markdown::MarkdownRender::init(options).unwrap();
-                        println!("{}", render.render(&risks.plain_risks));
-                    }
+            let risks = serde_json::from_str::<Risks>(&msg).map_err(|e| {
+                println!("parse error{}", msg);
+                e
+            })?;
+
+            if risks.backend == "openai" {
+                for risk in risks.risks {
+                    println!("{}", risk);
                 }
-                Err(_) => {
-                    println!("parse error{}", msg);
-                }
+            } else {
+                let mut render = RENDER.lock().unwrap();
+                println!("{}", render.render(&risks.plain_risks));
             }
         }
         Err(e) => {
@@ -166,40 +168,107 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
     Ok(())
 }
 
-//TODO:
-fn dev(description: &str) -> Result<()> {
-    // println!("not implemented");
-    // Ok(())
+#[derive(Debug, Deserialize)]
+struct DevTask {
+    repo: String,
+    description: String,
+    token: Option<String>,
+}
 
-    let server_addr = "ws://127.0.0.1:8000/ws";
+#[derive(Debug, Deserialize)]
+struct Task {
+    task_id: String,
+}
 
-    let client = ClientBuilder::new(server_addr)
-        .unwrap()
-        .connect_insecure()
-        .unwrap();
+#[derive(Debug, Deserialize)]
+struct Status {
+    status: String,
+    patch: Option<String>,
+}
 
-    let (mut receiver, mut sender) = client.split().unwrap();
-
-    // 创建一个线程来处理接收到的消息
-    for message in receiver.incoming_messages() {
-        let message = message.unwrap();
-
-        match message {
-            OwnedMessage::Close(_) => {
-                let _ = sender.send_message(&Message::close());
-                break;
-            }
-            // OwnedMessage::Ping(ping) => {
-            //     let _ = sender.send_message(&Message::pong(ping));
-            // }
-            OwnedMessage::Text(text) => {
-                println!("Received message: {}", text);
-            }
-            _ => {}
-        }
+fn download_patch(api_url: &str, api_key: &str, uuid: &str) -> Result<()> {
+    let resp = llm_client::status(api_url, api_key, &uuid)?;
+    let status = serde_json::from_str::<Status>(&resp)?;
+    if status.status == "DONE" && status.patch.is_some() {
+        let file_name = format!("{}.diff", uuid);
+        let patch_content = status.patch.unwrap();
+        //save to uuid.diff
+        let mut file = File::create(&file_name)?;
+        file.write_all(patch_content.as_bytes())?;
+        println!("task {} done. saved patch into {}", uuid, file_name);
+    } else {
+        //display current status
+        println!("task {}'s status is {:?}", uuid, status);
     }
-
     Ok(())
+}
+
+//TODO:
+fn dev(
+    description_filename: Option<String>,
+    follow: Option<String>,
+    patch: Option<String>,
+    api_url: &str,
+    api_key: &str,
+) -> Result<()> {
+    let display_history = |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
+        Ok(s) => {
+            let re = Regex::new(r#""content": "(.*?)""#).unwrap();
+            for cap in re.captures_iter(&s) {
+                println!("--------\n{}", &cap[1]);
+            }
+        }
+        Err(_) => {}
+    };
+
+    //get patch
+    if let Some(uuid) = patch {
+        download_patch(api_url, api_key, &uuid)
+    //follow history
+    } else if let Some(uuid) = follow {
+        //follow mode
+        llm_client::history(api_url, api_key, &uuid, display_history)?;
+        Ok(())
+    //submit task and follow history.
+    } else if let Some(desc_filename) = description_filename {
+        let file = File::open(desc_filename)?;
+        let reader = BufReader::new(file);
+        let task: DevTask = serde_yaml::from_reader(reader).expect("Failed to parse YAML");
+
+        let repo = &task.repo;
+        let token = match task.token {
+            Some(token) => token,
+            None => "".to_string(),
+        };
+        let desc = task.description;
+        /*
+        //read local yml file. get this paramters.
+        let repo = "https://github.com/bd-iaas-us/AILint.git";
+        let token = "FAKE_TOKEN";
+        */
+        debug!("{},{},{}", repo, token, desc);
+        let resp = llm_client::dev(api_url, api_key, &repo, &token, &desc)?;
+
+        let task = serde_json::from_str::<Task>(&resp)
+            .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
+        println!(
+            "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
+            task.task_id
+        );
+        //FIXME: backend is too slow, I have to wait
+        let (tx, rx) = mpsc::channel();
+        let handler = spinner::run_spinner("AI is prepare..., it may take around 1 minutes...", rx);
+        thread::sleep(Duration::from_secs(60));
+        let _ = tx.send(());
+        let _ = handler.join();
+        llm_client::history(api_url, api_key, &task.task_id, display_history)?;
+
+        download_patch(api_url, api_key, &task.task_id)?;
+        Ok(())
+    } else {
+        println!("print usage");
+        Ok(())
+    }
 }
 
 fn main() -> Result<()> {
@@ -207,7 +276,17 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Dev { description } => dev(&description),
+        Commands::Dev {
+            description_filename,
+            follow,
+            patch,
+        } => dev(
+            description_filename,
+            follow,
+            patch,
+            &cli.api_url,
+            &cli.api_key,
+        ),
         Commands::Lint {
             file_name,
             diff_mode,
