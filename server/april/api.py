@@ -15,7 +15,6 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 from issue import handle_prompt, handle_task, gen_history_data
 
-
 from logger import init_logger
 logger = init_logger(__name__)
 
@@ -52,6 +51,43 @@ async def supported_topics() -> Response:
     Get the list of supported topics
     """
     return JSONResponse(status_code=200, content={"topics": suppported_topics()})
+
+
+@app.post("/dev", dependencies=[Depends(veriy_header)])
+async def createPromptTask(request: Request) -> Response:
+    """
+    API for handle "dev" sub command
+    Currently only the following tasks supported:
+        1. Project based prompt:
+        {
+            "repo": "your repo url",
+            "token": "you token to access the repo",
+            "prompt": "your prompt"
+        }
+    """
+    
+    try:
+        request_dict = await request.json()
+
+        # Check if the request is for a project based prompt
+        if "prompt" in request_dict:
+            return handle_prompt(request_dict)
+
+        return JSONResponse(status_code=400, content={'message': f"The request must contain prompt"})
+    except Exception as e:
+        return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
+
+@app.get("/dev/tasks/{taskId}", dependencies=[Depends(veriy_header)])
+async def getTaskStatus(taskId) -> Response:
+    try: 
+        return handle_task(taskId)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'message': f"internal server error: {e}"})
+
+@app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
+async def getHistory(taskId, request: Request) -> StreamingResponse:
+    return StreamingResponse(gen_history_data(taskId, request.url))
+
 
 
 class LintRequest(BaseModel):
@@ -131,4 +167,5 @@ async def query(req :LintRequest) -> LintResponse:
 #uvicorn --reload --port 8000 api:app
 #TODO add arguments
 if __name__ == "__main__":
+    #asyncio.run(WebSocketServer())
     uvicorn.run(app, host="127.0.0.1", port=8000)

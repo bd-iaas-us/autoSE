@@ -3,6 +3,8 @@ import uuid
 from datetime import datetime
 import os
 from threading import Thread, Lock
+from logger import init_logger
+logger = init_logger(__name__)
 
 class TaskStatus(Enum):
     NEW = 0
@@ -15,10 +17,6 @@ class TaskStatus(Enum):
     def __str__(self):
         return str(self.value)
 
-# If the task has been idle for more than 5 minutes
-# time out
-TaskTimedOut = 300
-
 class Task:
     def __init__(self, title):
         self._lock = Lock()
@@ -26,10 +24,8 @@ class Task:
         self.status = TaskStatus.NEW
         self.id = str(uuid.uuid4())
         self.data_dir = ""
-        self.last_history_idx = -1
-        self.last_modified = datetime.now()
-        self.history_file = None
         self.patch_file = None
+        self.histories = []
 
 
     def get_id(self):
@@ -72,24 +68,18 @@ class Task:
                         return self.patch_file
         return None
 
-    def get_last_history_idx(self):
+    # entry must be a valid json object
+    def append_history(self, entry):
         with self._lock:
-            return self.last_history_idx
-    
-    def set_last_history_idx(self, index):
-        with self._lock:
-            self.last_history_idx = index
-            self.last_modified = datetime.now()
+            logger.info(f'APPEND history: {entry}')
+            self.histories.append(entry)
 
-    def get_last_modified(self):
-        with self._lock:
-            return self.last_modified
+    def get_history_len(self):
+        return len(self.histories)
 
-    def timed_out(self):
-        with self._lock:
-            delta = datetime.now() - self.last_modified
+    def get_history(self, index):
+        return self.histories[index]
 
-            if delta.total_seconds() >= TaskTimedOut:
-                self.status = TaskStatus.TIMED_OUT
-                return True
-            return False
+    def clear_history(self):
+        self.histories.clear()
+
