@@ -8,15 +8,18 @@ use lazy_static::lazy_static;
 use log::{debug, warn};
 use regex::Regex;
 use serde::Deserialize;
+use std::cell::RefCell;
 use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::io::Read;
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, arg_required_else_help = true)]
@@ -112,6 +115,39 @@ struct AILintSupportedTopics {
     topics: Vec<String>,
 }
 
+fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
+    let (tx, rx) = mpsc::channel();
+
+    //wrap thread handler in Option is a must.
+    //because we could use take to make sure handler is removed.
+    let handler = RefCell::new(Some(spinner::run_spinner(
+        "AI is prepare..., it may take around 1 minutes...",
+        rx,
+    )));
+    let is_first_chunk_arrive = RefCell::new(true);
+    let display_history = move |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
+        Ok(s) => {
+            if *is_first_chunk_arrive.borrow() {
+                let _ = tx.send(());
+                handler
+                    .take()
+                    .unwrap()
+                    .join()
+                    .expect("thread join should be success");
+                *is_first_chunk_arrive.borrow_mut() = false;
+            }
+            debug!("recved time: {:?}", Instant::now());
+
+            let mut render = RENDER.lock().unwrap();
+            println!("{}", render.render(&s));
+        }
+        Err(_) => {}
+    };
+    llm_client::history(api_url, api_key, task_id, display_history)?;
+
+    Ok(())
+}
+
 //lint
 fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str) -> Result<()> {
     let mut project_name = String::new();
@@ -143,7 +179,6 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
             //close the fancy spinner.
             let _ = tx.send(());
             let _ = handler.join();
-
             let risks = serde_json::from_str::<Risks>(&msg).map_err(|e| {
                 println!("parse error{}", msg);
                 e
@@ -211,23 +246,13 @@ fn dev(
     api_url: &str,
     api_key: &str,
 ) -> Result<()> {
-    let display_history = |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
-        Ok(s) => {
-            let re = Regex::new(r#""content": "(.*?)""#).unwrap();
-            for cap in re.captures_iter(&s) {
-                println!("--------\n{}", &cap[1]);
-            }
-        }
-        Err(_) => {}
-    };
-
     //get patch
     if let Some(uuid) = patch {
         download_patch(api_url, api_key, &uuid)
     //follow history
     } else if let Some(uuid) = follow {
         //follow mode
-        llm_client::history(api_url, api_key, &uuid, display_history)?;
+        display_history(api_url, api_key, &uuid)?;
         Ok(())
     //submit task and follow history.
     } else if let Some(desc_filename) = description_filename {
@@ -256,13 +281,7 @@ fn dev(
             task.task_id
         );
         //FIXME: backend is too slow, I have to wait
-        let (tx, rx) = mpsc::channel();
-        let handler = spinner::run_spinner("AI is prepare..., it may take around 1 minutes...", rx);
-        thread::sleep(Duration::from_secs(60));
-        let _ = tx.send(());
-        let _ = handler.join();
-        llm_client::history(api_url, api_key, &task.task_id, display_history)?;
-
+        display_history(api_url, api_key, &task.task_id)?;
         download_patch(api_url, api_key, &task.task_id)?;
         Ok(())
     } else {

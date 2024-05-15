@@ -22,7 +22,7 @@ logger = init_logger(__name__)
 openai_template = """
 {% if documents %}
 Context information is below.
----------------------
+---------------------   
 {% for doc in documents %}
     {{ doc.content }}
 {% endfor %}

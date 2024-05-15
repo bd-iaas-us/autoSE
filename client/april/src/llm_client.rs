@@ -80,7 +80,7 @@ pub fn history(
     url: &str,
     api_key: &str,
     id: &str,
-    callback: impl Fn(&Vec<u8>) + Send + 'static,
+    mut callback: impl Fn(&Vec<u8>) + Send + 'static,
 ) -> Result<()> {
     let mut request = ehttp::Request::get(format!("{}/dev/histories/{}", url, id,).as_str());
     request.headers.insert("Authorization", api_key);

@@ -1,6 +1,12 @@
 ![](https://github.com/bd-iaas-us/AILint/actions/workflows/ci.yml/badge.svg)
 # AILint
-AILint is a LLM-backed Linter. It scans a file or a git diff to identify potential code problems, and offer suggestions. 
+AILint is a LLM-backed developer helper. it could privide code lint and wrote a patch for simple tasks.
+
+# features
+
+* It scans a file or a git diff to identify potential code problems, and offer suggestions. 
+* It could accept task from a description file and try to write a patch for specifiled repository. 
+
 
 ## Installation
 
@@ -18,12 +24,28 @@ AILint is not only a commandline tool. It relies on a backend with the power of 
 
 # How To Use
 
-Just run "ailint <fileName>" to find the potential problems in your code and see the recommended fixes.
+## lint
+
+### diff mode
+
+Just run `ailint --diff-mode lint <fileName>` to find the potential problems in your code and see the recommended fixes.
+
+
+### single file mode
+`ailint --diff-mode lint <fileName>`
+
+### project mdoe
+
+If the command `ailint --diff-mode` is executed in a git-managed directory, ailint calls git diff to check for any potential issues in the diffs.
 
 Here is an example screenshot:
 
-![demo_usage](./docs/images/demo_usage.jpeg)
+![lint_usage](./docs/images/lint_usage.png)
 
+## dev
+
+
+![lint_usage](./docs/images/dev_usage.png)
 
 
 # Architecture

@@ -1,4 +1,2 @@
 repo: https://github.com/bd-iaas-us/AILint.git 
-description: create a file whose name is utils.py. implement a binary search. export function as `search(array, value)`
-
-
+description: create a file whose name is utils_good.py. implement find function which will walk a fold, find the specifiled file.
