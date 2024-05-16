@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use april::llm_client;
+use april::utils;
 use april::utils::git;
 use april::utils::markdown;
 use april::utils::spinner;
@@ -116,35 +117,17 @@ struct AILintSupportedTopics {
 }
 
 fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
-    let (tx, rx) = mpsc::channel();
-
-    //wrap thread handler in Option is a must.
-    //because we could use take to make sure handler is removed.
-    let handler = RefCell::new(Some(spinner::run_spinner(
-        "AI is prepare..., it may take around 1 minutes...",
-        rx,
-    )));
-    let is_first_chunk_arrive = RefCell::new(true);
+    let handler = spinner::SpinnerManager::new("AI is prepare..., it may take around 1 minutes...");
     let display_history = move |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
         Ok(s) => {
-            if *is_first_chunk_arrive.borrow() {
-                let _ = tx.send(());
-                handler
-                    .take()
-                    .unwrap()
-                    .join()
-                    .expect("thread join should be success");
-                *is_first_chunk_arrive.borrow_mut() = false;
-            }
-            debug!("recved time: {:?}", Instant::now());
-
+            handler.pause();
             let mut render = RENDER.lock().unwrap();
             println!("{}", render.render(&s));
+            handler.cont("");
         }
         Err(_) => {}
     };
     llm_client::history(api_url, api_key, task_id, display_history)?;
-
     Ok(())
 }
 
@@ -171,33 +154,28 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
         file.read_to_string(&mut code)?;
     }
 
-    let (tx, rx) = mpsc::channel();
-    let handler = spinner::run_spinner("Generating", rx);
+    let mut sm = spinner::SpinnerManager::new("Generating");
 
-    match llm_client::lint(api_url, api_key, &project_name, &code) {
-        Ok(msg) => {
-            //close the fancy spinner.
-            let _ = tx.send(());
-            let _ = handler.join();
-            let risks = serde_json::from_str::<Risks>(&msg).map_err(|e| {
-                println!("parse error{}", msg);
-                e
-            })?;
+    let msg = llm_client::lint(api_url, api_key, &project_name, &code).map_err(|e| {
+        sm.stop();
+        println!("request service error: {}", e);
 
-            if risks.backend == "openai" {
-                for risk in risks.risks {
-                    println!("{}", risk);
-                }
-            } else {
-                let mut render = RENDER.lock().unwrap();
-                println!("{}", render.render(&risks.plain_risks));
-            }
+        e
+    })?;
+
+    sm.stop();
+    let risks = serde_json::from_str::<Risks>(&msg).map_err(|e| {
+        println!("parse error{}", msg);
+        e
+    })?;
+
+    if risks.backend == "openai" {
+        for risk in risks.risks {
+            println!("{}", risk);
         }
-        Err(e) => {
-            let _ = tx.send(());
-            let _ = handler.join();
-            println!("request service error: {}", e);
-        }
+    } else {
+        let mut render = RENDER.lock().unwrap();
+        println!("{}", render.render(&risks.plain_risks));
     }
 
     Ok(())
