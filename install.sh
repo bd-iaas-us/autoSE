@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define the GitHub repository and the name of the binary.
-GITHUB_REPO="bd-iaas-us/AILint"
-BINARY_NAME="ailint"
+GITHUB_REPO="bd-iaas-us/autoSE"
+BINARY_NAME="autose"
 
 # Check the operating system
 OS="$(uname)"
@@ -19,7 +19,7 @@ else
 fi
 
 command -v unzip >/dev/null ||
-    error 'unzip is required to install ailint'
+    error 'unzip is required to install autoSE'
 
 # Make sure the target dir exists
 mkdir -p "${TARGET_DIR}"
@@ -46,29 +46,29 @@ GITHUB=${GITHUB-"https://github.com"}
 github_repo="$GITHUB/$GITHUB_REPO"
 
 if [[ $# = 0 ]]; then
-    AILINT_BINARY_URL=$github_repo/releases/latest/download/ailint-$target.tar.gz
+    AUTOSE_BINARY_URL=$github_repo/releases/latest/download/autose-$target.tar.gz
 else
-    AILINT_BINARY_URL=$github_repo/releases/download/$1/ailint-$target.tar.gz
+    AUTOSE_BINARY_URL=$github_repo/releases/download/$1/autose-$target.tar.gz
 fi
 
 # Check if the download URL was found.
-if [ -z "${AILINT_BINARY_URL}" ]; then
+if [ -z "${AUTOSE_BINARY_URL}" ]; then
     echo "Failed to find the download URL for the '${BINARY_NAME}' binary."
     echo "Please check the GitHub repository and release information."
     exit 1
 fi
 
-# Download the 'ailint' CLI binary from the specified URL.
+# Download the 'autose' CLI binary from the specified URL.
 echo "Downloading '${BINARY_NAME}' CLI binary..."
-curl -L -o "${TMPDIR}/${BINARY_NAME}.tar.gz" "${AILINT_BINARY_URL}"
+curl -L -o "${TMPDIR}/${BINARY_NAME}.tar.gz" "${autose_BINARY_URL}"
 
 # Extract the zip file in the temporary directory.
 # echo "tar zxvf \"${TMPDIR}/${BINARY_NAME}.tar.gz\" -C \"${TMPDIR}\""
 tar zxvf "${TMPDIR}/${BINARY_NAME}.tar.gz" -C "${TMPDIR}" ||
-    error 'Failed to extract ailint'
+    error 'Failed to extract autose'
 
 # Move the binary to the target directory.
-mv "${TMPDIR}/ailint" "${TARGET_DIR}/${BINARY_NAME}"
+mv "${TMPDIR}/autose" "${TARGET_DIR}/${BINARY_NAME}"
 
 # Make the downloaded binary executable.
 chmod +x "${TARGET_FILE}"

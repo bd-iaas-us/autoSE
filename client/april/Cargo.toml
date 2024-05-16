@@ -5,8 +5,8 @@ edition = "2021"
 rust-version = "1.77"
 
 [[bin]]
-name = "ailint"
-path = "src/bin/lint.rs"
+name = "autose"
+path = "src/bin/main.rs"
 
 
 [dependencies]
