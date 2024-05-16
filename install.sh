@@ -60,7 +60,7 @@ fi
 
 # Download the 'autose' CLI binary from the specified URL.
 echo "Downloading '${BINARY_NAME}' CLI binary..."
-curl -L -o "${TMPDIR}/${BINARY_NAME}.tar.gz" "${autose_BINARY_URL}"
+curl -L -o "${TMPDIR}/${BINARY_NAME}.tar.gz" "${AUTOSE_BINARY_URL}"
 
 # Extract the zip file in the temporary directory.
 # echo "tar zxvf \"${TMPDIR}/${BINARY_NAME}.tar.gz\" -C \"${TMPDIR}\""
