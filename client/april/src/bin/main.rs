@@ -159,7 +159,6 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
     let msg = llm_client::lint(api_url, api_key, &project_name, &code).map_err(|e| {
         sm.stop();
         println!("request service error: {}", e);
-
         e
     })?;
 

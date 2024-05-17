@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_run_spinner() {
-        let sm = SpinnerManager::new("hello, world");
+        let mut sm = SpinnerManager::new("hello, world");
         thread::sleep(Duration::from_secs(3));
         sm.pause();
         thread::sleep(Duration::from_secs(3));
