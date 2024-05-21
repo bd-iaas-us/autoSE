@@ -1,16 +1,19 @@
 use anyhow::Result;
 use crossterm::{cursor, queue, style, terminal};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
+use std::sync::{Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::{
     io::{stdout, Stdout, Write},
     thread,
     time::Duration,
 };
+
 struct Spinner {
     index: usize,
     message: String,
     stopped: bool,
+    clear_signal: Arc<(Mutex<()>, Condvar)>,
 }
 
 enum Msg {
@@ -27,6 +30,7 @@ impl Spinner {
             index: 0,
             message: message.to_string(),
             stopped: false,
+            clear_signal: Arc::new((Mutex::new(()), Condvar::new())),
         }
     }
 
@@ -58,6 +62,9 @@ impl Spinner {
             cursor::Show
         )?;
         writer.flush()?;
+        let (lock, cvar) = &*self.clear_signal;
+        lock.lock().unwrap();
+        cvar.notify_all();
         Ok(())
     }
 }
@@ -65,25 +72,34 @@ impl Spinner {
 pub struct SpinnerManager {
     tx: mpsc::Sender<Msg>,
     handler: Option<JoinHandle<()>>,
+    clear_signal: Arc<(Mutex<()>, Condvar)>,
 }
 
 impl SpinnerManager {
     pub fn new(message: &str) -> SpinnerManager {
         let (tx, rx) = mpsc::channel();
-        let handler = run_spinner(message, rx);
+        let (handler, clear_signal) = run_spinner(message, rx);
         SpinnerManager {
             tx,
             handler: Some(handler),
+            clear_signal,
         }
     }
     pub fn pause(&self) {
         self.tx.send(Msg::PAUSE).unwrap();
+        let (lock, cond) = &*self.clear_signal;
+        let _guard = lock.lock().unwrap();
+        cond.wait(_guard);
     }
     pub fn stop(&mut self) {
         self.tx.send(Msg::STOP).unwrap();
+        let (lock, cond) = &*self.clear_signal;
+        let _guard = lock.lock().unwrap();
+        cond.wait(_guard);
         if let Some(h) = self.handler.take() {
             h.join();
         }
+
         //self.handler.join();
     }
     pub fn cont(&self, msg: &str) {
@@ -91,9 +107,13 @@ impl SpinnerManager {
     }
 }
 
-fn run_spinner(message: &str, rx: mpsc::Receiver<Msg>) -> JoinHandle<()> {
+fn run_spinner(
+    message: &str,
+    rx: mpsc::Receiver<Msg>,
+) -> (JoinHandle<()>, Arc<(Mutex<()>, Condvar)>) {
     let mut writer = stdout();
     let mut spinner = Spinner::new(message);
+    let clear_signal = spinner.clear_signal.clone();
     let handler = thread::spawn(move || loop {
         if let Ok(msg) = rx.try_recv() {
             match msg {
@@ -119,7 +139,7 @@ fn run_spinner(message: &str, rx: mpsc::Receiver<Msg>) -> JoinHandle<()> {
             }
         }
     });
-    handler
+    (handler, clear_signal)
 }
 
 #[cfg(test)]
