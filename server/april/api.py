@@ -86,7 +86,7 @@ async def getTaskStatus(taskId) -> Response:
 
 @app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getHistory(taskId, request: Request) -> StreamingResponse:
-    return StreamingResponse(gen_history_data(taskId, request.url))
+    return StreamingResponse(gen_history_data(taskId, request.url), media_type="text/plain")
 
 
 

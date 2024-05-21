@@ -45,7 +45,7 @@ class SWEAgent:
         '''
         self.data_path = data_path
         self.repo_path = repo_path
-        self.model_name = 'gpt4'
+        self.model_name = 'gpt4o'
         self.ailint_task = ailint_task
 
     def run(self):
@@ -234,10 +234,9 @@ def gen_history_data(taskId: str, url: str):
     while True:
         n = task.get_history_len()
         if n == idx:
-           #logger.debug(f"SLEEP, n:{n}, idx:{idx}")
            if datetime.now() - last_update > timedelta(minutes=2):
                logger.warn(f"client waits too long, quit...")
-               return "SERVER TIMEOUT: retry"
+               return 
            #TODO: use cond lock to replace time.sleep 
            time.sleep(0.2)
            continue
