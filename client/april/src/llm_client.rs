@@ -41,7 +41,11 @@ fn block_fetching(request: ehttp::Request) -> Result<String> {
         .ok_or(anyhow!("response's body is empty. check the server"))?;
 
     if response.status != 200 {
-        return Err(anyhow!("remote service returns {}", response.status));
+        return Err(anyhow!(
+            "remote service returns code:{}, body:{}",
+            response.status,
+            response.text().unwrap_or("")
+        ));
     }
 
     Ok(txt.to_string())
@@ -53,11 +57,19 @@ pub fn supported_topics(url: &str, api_key: &str) -> Result<String> {
 
     block_fetching(request)
 }
-pub fn dev(url: &str, api_key: &str, repo: &str, token: &str, desc: &str) -> Result<String> {
+pub fn dev(
+    url: &str,
+    api_key: &str,
+    repo: &str,
+    token: &str,
+    desc: &str,
+    model: &str,
+) -> Result<String> {
     let message = json!({
                          "repo": repo,
                          "token": token,
                          "prompt": desc,
+                         "model": model
     });
 
     let mut request = ehttp::Request::post(
@@ -80,7 +92,7 @@ pub fn history(
     url: &str,
     api_key: &str,
     id: &str,
-    mut callback: impl Fn(&Vec<u8>) + Send + 'static,
+    callback: impl Fn(&Vec<u8>) + Send + 'static,
 ) -> Result<()> {
     let mut request = ehttp::Request::get(format!("{}/dev/histories/{}", url, id,).as_str());
     request.headers.insert("Authorization", api_key);
@@ -120,7 +132,7 @@ pub fn history(
     Ok(())
 }
 
-pub fn lint(url: &str, api_key: &str, topic: &str, code: &str) -> Result<String> {
+pub fn lint(url: &str, api_key: &str, topic: &str, code: &str, model: &str) -> Result<String> {
     //parameters should be non-empty
     if code.is_empty() {
         return Err(anyhow!("code is empty"));
@@ -128,6 +140,7 @@ pub fn lint(url: &str, api_key: &str, topic: &str, code: &str) -> Result<String>
     let message = json!({
                          "code": code,
                          "topic": topic,
+                         "model": model
     });
 
     debug!("topic is {}", topic);
