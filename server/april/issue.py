@@ -1,17 +1,17 @@
 
 import os
 import sys
-import requests
 import json
 import re
 from git import Repo
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+#from fastapi.responses import JSONResponse
+from fastapi import HTTPException
 from urllib.parse import urlparse
 from task import Task, TaskStatus
 from datetime import datetime, timedelta
-
 import time
 import git
+from typing import Dict
 
 swe_dir = '/root/git/SWE-agent.new'
 sys.path.append(swe_dir)
@@ -34,18 +34,19 @@ from threading import Thread, Lock
 # But not for operations like: dict[i] = dick[j], dict[i] += 1 etc
 # Add a mutex to guard tasks for peaceful mind
 tasks_mutex = Lock()
-tasks = {}
-
+tasks: Dict[str, Task] = {}
 
 class SWEAgent:
-    def __init__(self, data_path, repo_path, ailint_task):
+    def __init__(self, data_path, repo_path, ailint_task, model):
         '''
         data_path: the path to the issue file, should be end with .md or .txt
         repo_path: the path to the repo directory, should be clean except the issue file
         '''
         self.data_path = data_path
         self.repo_path = repo_path
-        self.model_name = 'gpt4o'
+        if not model.startswith("openai:"):
+            raise Exception("only openai supported")
+        self.model_name = model.split(":")[1]
         self.ailint_task = ailint_task
 
     def run(self):
@@ -119,14 +120,6 @@ def gen_github_api_url(url_obj):
     owner, repo = get_owner_repo(url_obj)
     return f'{url_obj.scheme}://{github_api}/repos/{owner}/{repo}/'
 
-# Parses the promptObj and return the url object
-def parse_prompt_obj(prompt_obj: dict):
-    repo_url = prompt_obj["repo"]
-    if repo_url is not None:
-        url_obj = urlparse(repo_url)
-        return url_obj
-    return None
-
 
 # "tasks" is a built-in dict object and thread-safe for single
 # operations like tasks[taskId], but not for the task in "tasks"
@@ -143,13 +136,15 @@ def add_task(task: Task):
         tasks[task.id] = task
 
 # The handler function retrieve the task
-def handle_task(taskId):
+def handle_task(taskId) -> tuple[str, str]:
+    """
+    return a tuple[status, patch]
+    """
     logger.info(f'getting task info for taskId: {taskId}')
 
     task = get_task(taskId)
     if task is None:
-        message = f'The task {taskId} does not exist'
-        return JSONResponse(status_code=404, content={'message': message})
+        raise HTTPException(status_code=400, detail = f"The task {taskId} does not exist")
     # get patch
     patch_file = task.get_patch_file()
     patch = ""
@@ -158,10 +153,10 @@ def handle_task(taskId):
         with open(patch_file, 'r') as f:
             patch = f.read()
 
-    return JSONResponse(status_code=200, content={'status': task.get_status().name, 'patch': patch})
+    return (task.get_status().name, patch)
 
 # Only support "https:" scheme for the moment
-def clone_repo(url_obj: str, token = None, folder_suffix =""):
+def clone_repo(url_obj, token = None, folder_suffix =""):
     owner, repo = get_owner_repo(url_obj)
     repo_exist, repo_folder = get_repo_folder(owner, repo, folder_suffix)
     if not repo_exist:
@@ -175,58 +170,47 @@ def clone_repo(url_obj: str, token = None, folder_suffix =""):
     return False, repo_folder
 
 # The handler function for repo prompt
-def handle_prompt(prompt_obj: dict):
+def handle_prompt(request) -> str:
     """
     The worker function to handle a dev request for a  project based
     prompt
     The promptObj contains "repo", "token" and "prompt"
+    create swe-agent task
+    return taskID
     """
-    prompt = prompt_obj["prompt"]
-    if "repo" not in prompt_obj or prompt is None:
-        return JSONResponse(status_code=400, content={'message': "The prompt & repo must be present in request"})
-
-    logger.info(f'processing prompt: {prompt}')
-
-    url_obj = parse_prompt_obj(prompt_obj)
-    if url_obj is None or url_obj.path is None:
-        return JSONResponse(status_code=400, content={'message': "The repo specified is invalid"})
-
-    new_task = Task(prompt_obj["prompt"])
+    new_task = Task(request.prompt)
     logger.info(f'new_task: {new_task}')
     add_task(new_task)
-
-    folder_suffix = gen_folder_suffix()
-    token = prompt_obj.get("token")
-
-    success, repo_folder = clone_repo(url_obj, token, folder_suffix)
+    try:
+        url_obj = urlparse(request.repo)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"{e}")
+    
+    success, repo_folder = clone_repo(url_obj, request.token, gen_folder_suffix())
     if not success:
-        return JSONResponse(status_code=400, content={'message': "The repo specified exists or cannot be cloned"})
-
+        #return JSONResponse(status_code=400, content={'message': "The repo specified exists or cannot be cloned"})
+        raise HTTPException(status_code=400, detail="{the repo specified exists or cannot be cloned")
 
     prompt_file_name = f'{repo_folder}/prompt_{new_task.get_id()}.txt'
     with open(prompt_file_name, "w") as prompt_file:
-        prompt_file.write(prompt)
+        prompt_file.write(request.prompt)
  
     new_task.set_status(TaskStatus.RUNNING)
 
     try:
-        agent = SWEAgent(prompt_file_name, repo_folder, new_task)
+        agent = SWEAgent(prompt_file_name, repo_folder, new_task, request.model)
         result_dir = agent.run()
         new_task.set_data_dir(result_dir)
     except Exception as e:
-        print(e)
-        return JSONResponse(status=500, content=e)
-
-
-    return JSONResponse(status_code=200, content={"task_id": new_task.get_id()})
+        raise HTTPException(status_code=500, detail = f"{e}")
+    return new_task.get_id()
 
 # NOTE: The function can not be called with gen_history_data at the same time
-def gen_history_data(taskId: str, url: str):
-    data = {}
+def gen_history_data(taskId: str):
     task = get_task(taskId)
     logger.info(f'get task: {task}')
     if task is None:
-        return json.dumps(data)
+        raise HTTPException(status_code=400, detail=f"do not find the taskid {taskId}")
 
     idx = 0
     last_update = datetime.now()
@@ -250,6 +234,5 @@ def gen_history_data(taskId: str, url: str):
             if "submit" in item["action"]:
                 task.set_status(TaskStatus.DONE)
                 return
-
         idx = n
 

@@ -2,8 +2,9 @@ from index import QueryLint, suppported_topics
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from contextlib import asynccontextmanager
-from typing import Union, List, Any
+from typing import Union, List, Any, Optional
 from pydantic import BaseModel
+
 
 import uvicorn
 import json
@@ -53,8 +54,17 @@ async def supported_topics() -> Response:
     return JSONResponse(status_code=200, content={"topics": suppported_topics()})
 
 
+class DevRequest(BaseModel):
+    prompt: str
+    repo: str
+    token: Optional[str] = None
+    model: str
+
+class DevResponse(BaseModel):
+    task_id: str
+
 @app.post("/dev", dependencies=[Depends(veriy_header)])
-async def createPromptTask(request: Request) -> Response:
+async def dev_task(request: DevRequest) -> DevResponse:
     """
     API for handle "dev" sub command
     Currently only the following tasks supported:
@@ -65,74 +75,57 @@ async def createPromptTask(request: Request) -> Response:
             "prompt": "your prompt"
         }
     """
-    
-    try:
-        request_dict = await request.json()
+    logger.debug(request)
 
-        # Check if the request is for a project based prompt
-        if "prompt" in request_dict:
-            return handle_prompt(request_dict)
+    return DevResponse(task_id=handle_prompt(request))
 
-        return JSONResponse(status_code=400, content={'message': f"The request must contain prompt"})
-    except Exception as e:
-        return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
+class TaskStatus(BaseModel):
+    status :str
+    patch: Optional[str] = None
 
 @app.get("/dev/tasks/{taskId}", dependencies=[Depends(veriy_header)])
-async def getTaskStatus(taskId) -> Response:
-    try: 
-        return handle_task(taskId)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={'message': f"internal server error: {e}"})
+async def getTaskStatus(taskId) -> TaskStatus:
+    status, patch = handle_task(taskId)
+    return TaskStatus(status=status, patch=patch)
+
+    
 
 @app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getHistory(taskId, request: Request) -> StreamingResponse:
-    return StreamingResponse(gen_history_data(taskId, request.url), media_type="text/plain")
+    return StreamingResponse(gen_history_data(taskId), media_type="text/plain")
 
 
 
 class LintRequest(BaseModel):
     topic: str
     code: str
+    """
+    model should follow this format:
+    org:model
+    such as 
+    openai:gpt4
+    ...
+    ollama:llama3
+    """    
+    model: str
 
 class LintResponse(BaseModel):
-    backend: str
+    """
+    backend is deprecated.
+    """
+    backend: Optional[str] = None
     plain_risks : str
     risks : List
-
-@app.post("/dev", dependencies=[Depends(veriy_header)])
-async def createPromptTask(request: Request) -> Response:
     """
-    API for handle "dev" sub command
-    Currently only the following tasks supported:
-        1. Project based prompt:
-        {
-            "repo": "your repo url",
-            "token": "you token to access the repo",
-            "prompt": "your prompt"
-        }
-    """
+    model should follow this format:
+    org:model
+    such as 
+    openai:gpt4
+    ...
+    ollama:llama3
+    """    
+    model: str
 
-    try:
-        request_dict = await request.json()
-
-        # Check if the request is for a project based prompt
-        if "prompt" in request_dict:
-            return handle_prompt(request_dict)
-
-        return JSONResponse(status_code=400, content={'message': f"The request must contain prompt"})
-    except Exception as e:
-        return JSONResponse(status_code=400, content={'message': f"invalid request, missing {e}"})
-
-@app.get("/dev/tasks/{taskId}", dependencies=[Depends(veriy_header)])
-async def getTask(taskId) -> Response:
-    try: 
-        return handle_task(taskId)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={'message': f"internal server error: {e}"})
-
-@app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
-async def getHistory(taskId, request: Request) -> StreamingResponse:
-    return StreamingResponse(gen_history_data(taskId, request.url))
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
 async def query(req :LintRequest) -> LintResponse:
@@ -143,14 +136,15 @@ async def query(req :LintRequest) -> LintResponse:
     """
     logger.debug(LintRequest)
     try: 
-        ai = os.environ["AI_BACKEND"]
+        model = req.model
+        ai = "openai"
+        #FIXME: QueryLint should support choosing models
         llm_response = QueryLint(ai).query_lint(req.topic, req.code)
-        #llm_response = '''{"risks":[{"which_part_of_code":"here", "reason":"why", "fix":"how"}, {"which_part_of_code":"here1", "reason":"why2", "fix":"how2"}]}'''
     except Exception as e:
         raise HTTPException(status_code=500, detail = f"{e}")
 
-    response = LintResponse(backend=ai, plain_risks="", risks=[])
-    if ai == "openai":
+    response = LintResponse(model="openai:gpt3.5", plain_risks="", risks=[])
+    if model.startswith("openai"):
         #llm_respnose is json-encode string returned from openai
         #response = {"risks":[{"which_part_of_code":"here", "reason":"why", "fix":"how"}, {"which_part_of_code":"here1", "reason":"why2", "fix":"how2"}]}
         response.backend = ai

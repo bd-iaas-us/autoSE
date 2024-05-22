@@ -1,26 +1,19 @@
 use anyhow::{anyhow, Result};
 use april::llm_client;
-use april::utils;
 use april::utils::git;
 use april::utils::markdown;
 use april::utils::spinner;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
 use lazy_static::lazy_static;
 use log::{debug, warn};
-use regex::Regex;
 use serde::Deserialize;
-use std::cell::RefCell;
 use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::io::Read;
-use std::sync::mpsc;
-use std::sync::Arc;
 use std::sync::Mutex;
-use std::thread;
-use std::time::Duration;
-use std::time::Instant;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, arg_required_else_help = true)]
@@ -41,6 +34,38 @@ struct Cli {
     command: Commands,
 }
 
+trait ToStringFromValue {
+    fn to_str(&self) -> String
+    where
+        Self: ValueEnum,
+    {
+        self.to_possible_value()
+            .expect("no value skipped")
+            .get_name()
+            .to_owned()
+    }
+}
+#[derive(Debug, Clone, ValueEnum)]
+enum DevModel {
+    #[clap(name = "openai:gpt4o")]
+    Gpt4o,
+    #[clap(name = "openai:gpt4")]
+    Gpt4,
+}
+
+impl ToStringFromValue for DevModel {}
+#[derive(Debug, Clone, ValueEnum)]
+enum LintModel {
+    // TODO: test other models
+    // #[clap(name = "openai:gpt4o")]
+    // Gpt4o,
+    // #[clap(name = "openai:gpt4")]
+    // Gpt4,
+    #[clap(name = "openai:gpt3")]
+    Gpt3,
+}
+impl ToStringFromValue for LintModel {}
+
 #[derive(Subcommand)]
 enum Commands {
     /// lint the file
@@ -50,6 +75,8 @@ enum Commands {
         file_name: Option<String>,
         #[arg(long)]
         diff_mode: bool,
+        #[arg(long, short, default_value = "openai:gpt3", env = "AUOSE_LINT_MODEL")]
+        model: LintModel,
     },
 
     /// given a description, wrote a patch.
@@ -63,6 +90,9 @@ enum Commands {
         /// get remote tasks' patch
         #[arg(long, short)]
         patch: Option<String>,
+
+        #[arg(long, short, default_value = "openai:gpt4", env = "AUTOSE_DEV_MODEL")]
+        model: DevModel,
     },
 }
 
@@ -132,7 +162,13 @@ fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
 }
 
 //lint
-fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str) -> Result<()> {
+fn lint(
+    file_name: Option<String>,
+    diff_mode: bool,
+    api_url: &str,
+    api_key: &str,
+    model: &str,
+) -> Result<()> {
     let mut project_name = String::new();
     let mut code = String::new();
     if diff_mode {
@@ -156,7 +192,7 @@ fn lint(file_name: Option<String>, diff_mode: bool, api_url: &str, api_key: &str
 
     let mut sm = spinner::SpinnerManager::new("Generating");
 
-    let msg = llm_client::lint(api_url, api_key, &project_name, &code).map_err(|e| {
+    let msg = llm_client::lint(api_url, api_key, &project_name, &code, model).map_err(|e| {
         sm.stop();
         println!("request service error: {}", e);
         e
@@ -222,6 +258,7 @@ fn dev(
     patch: Option<String>,
     api_url: &str,
     api_key: &str,
+    model: &str,
 ) -> Result<()> {
     //get patch
     if let Some(uuid) = patch {
@@ -249,7 +286,7 @@ fn dev(
         let token = "FAKE_TOKEN";
         */
         debug!("{},{},{}", repo, token, desc);
-        let resp = llm_client::dev(api_url, api_key, &repo, &token, &desc)?;
+        let resp = llm_client::dev(api_url, api_key, repo, &token, &desc, model)?;
 
         let task = serde_json::from_str::<Task>(&resp)
             .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
@@ -276,16 +313,25 @@ fn main() -> Result<()> {
             description_filename,
             follow,
             patch,
+            model,
         } => dev(
             description_filename,
             follow,
             patch,
             &cli.api_url,
             &cli.api_key,
+            &model.to_str(),
         ),
         Commands::Lint {
             file_name,
             diff_mode,
-        } => lint(file_name, diff_mode, &cli.api_url, &cli.api_key),
+            model,
+        } => lint(
+            file_name,
+            diff_mode,
+            &cli.api_url,
+            &cli.api_key,
+            &model.to_str(),
+        ),
     }
 }
