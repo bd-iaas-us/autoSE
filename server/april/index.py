@@ -19,7 +19,8 @@ from logger import init_logger
 logger = init_logger(__name__)
 
 
-openai_template = """
+openai_template = '''
+
 {% if documents %}
 Context information is below.
 ---------------------   
@@ -29,15 +30,70 @@ Context information is below.
 ---------------------
 Given the context information and not prior knowledge
 {% endif %}
-you are a code reviewer, try your best to  identify *ALL*  possible code risks or errors, you must obey the following rules:
+
+you are a expert code reviewer, try your best to  identify *ALL*  possible  risks , each risk has  3 sections, try to  found as many as risks,  and put the most critical on top 
+For each section,
+ you must obey the following rules:
 1. For the code section, MUST show origin code in code section. so I could find where exactly the code is.
 2. For the reason describe them as much detail as possible. and give reference web url to justify.
-3. For the fix section, always show the fixed code directly as an example instead of general ideas.
+3. For the fix section, ALWAYS use unified diff format, and show the code language
+
+you have two examples to learn:
+example 1:
+
+```cpp
+void foo(int size) {
+	int x[size];
+	x[100] = 10;
+}
+int main(int argc, char** argv) {
+	foo(100);
+}
+```
+
+which_part_of_code: x[100] = 10;
+Reason:Accessing an array out of bounds, as the array x is declared with size 'size' but trying to access index 100 which is beyond the array size.
+Fix   :```cpp
+@@ -1,6 +1,6 @@
+ void foo(int size) {
+        int x[size];
+-       x[100] = 10;
++      x[size - 1] = 10;
+ }
+ int main(int argc, char** argv) {
+        foo(100);
+```
+
+example 2:
+```python
+@app.get("/supported_topics", dependencies=[Depends(verify_header)])
+async def supported_topics() -> Response:
+    """
+    Get the list of supported topics
+    """
+    return JSONResponse(status_code=200, content={"topics": suppported_topics()})
+```
+
+which_part_of_code: return JSONResponse(status_code=200, content={"topics": suppported_topics()})
+Reason: typo, suppported_topics is miss spelled 
+Fix: 
+```python
+@@ -1,6 +1,6 @@ a
+sync def supported_topics() -> Response:
+     """
+     Get the list of supported topics
+     """
+-    return JSONResponse(status_code=200, content={"topics": suppported_topics()})
++    return JSONResponse(status_code=200, content={"topics": supported_topics()})
+```
+
+This is the code you want to review:
 ---------------------
 {{code}}
 ---------------------
 
-"""
+
+'''
 
 
 templates = {
