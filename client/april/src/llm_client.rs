@@ -1,16 +1,14 @@
-use anyhow::{anyhow, Result};
 use ehttp;
 use log::debug;
 use serde_json::json;
 use std::ops::ControlFlow;
 use std::sync::mpsc::channel;
 
-/*
 use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum CustomError {
     #[error("internal channel error {0}")]
-    InternalError(#[from] RecvError),
+    InternalError(#[from] std::sync::mpsc::RecvError),
 
     #[error("invalid parameters")]
     InvalidParameters,
@@ -21,11 +19,13 @@ pub enum CustomError {
     #[error("http error {0}")]
     HttpError(String),
 
+    #[error("http interupted chunk")]
+    HttpChunkError,
+
     #[error("response body is missing")]
     BodyMissing,
 }
 pub type Result<T> = std::result::Result<T, CustomError>;
-*/
 
 fn block_fetching(request: ehttp::Request) -> Result<String> {
     let (sender, receiver) = channel::<std::result::Result<ehttp::Response, String>>();
@@ -34,20 +34,16 @@ fn block_fetching(request: ehttp::Request) -> Result<String> {
         sender.send(response).unwrap();
     });
 
-    let response = receiver.recv()?.map_err(|e| anyhow!(e))?;
-
-    let txt = response
-        .text()
-        .ok_or(anyhow!("response's body is empty. check the server"))?;
+    let response = receiver.recv()?.map_err(|e| CustomError::HttpError(e))?;
 
     if response.status != 200 {
-        return Err(anyhow!(
+        return Err(CustomError::HttpError(format!(
             "remote service returns code:{}, body:{}",
             response.status,
             response.text().unwrap_or("")
-        ));
+        )));
     }
-
+    let txt = response.text().ok_or(CustomError::BodyMissing)?;
     Ok(txt.to_string())
 }
 
@@ -104,8 +100,14 @@ pub fn history(
     ehttp::streaming::fetch(request, move |part| {
         let part = match part {
             Ok(part) => part,
-            Err(e) => {
-                let _ = tx.send(Err(anyhow!("fetch part failed: {}", e)));
+            //lower api only returns a &str.
+            Err(error) => {
+                debug!("{}", error);
+                if error.starts_with("Failed to read response body: Error while decoding chunk") {
+                    let _ = tx.send(Err(CustomError::HttpChunkError));
+                } else {
+                    let _ = tx.send(Err(CustomError::HttpError(error)));
+                }
                 return ControlFlow::Break(());
             }
         };
@@ -133,10 +135,6 @@ pub fn history(
 }
 
 pub fn lint(url: &str, api_key: &str, topic: &str, code: &str, model: &str) -> Result<String> {
-    //parameters should be non-empty
-    if code.is_empty() {
-        return Err(anyhow!("code is empty"));
-    }
     let message = json!({
                          "code": code,
                          "topic": topic,

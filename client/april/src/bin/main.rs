@@ -13,7 +13,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::io::Read;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, arg_required_else_help = true)]
@@ -147,18 +148,50 @@ struct AILintSupportedTopics {
 }
 
 fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
-    let handler = spinner::SpinnerManager::new("AI is prepare..., it may take around 1 minutes...");
-    let display_history = move |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
-        Ok(s) => {
-            handler.pause();
-            let mut render = RENDER.lock().unwrap();
-            println!("{}", render.render(&s));
-            handler.cont("");
+    let mut i = 0;
+    loop {
+        let msg = if i == 0 {
+            "AI is prepare..., it may take around 1 minutes...".to_string()
+        } else {
+            format!(
+                "The network may experience lag or errors, retry({})...\n",
+                i
+            )
+        };
+
+        let handler = Arc::new(Mutex::new(spinner::SpinnerManager::new(&msg)));
+        let handler_clone = handler.clone();
+
+        let display_history_cb = move |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
+            Ok(s) => {
+                let handler = handler_clone.lock().unwrap();
+                handler.pause();
+                let mut render = RENDER.lock().unwrap();
+                println!("{}", render.render(&s));
+                handler.cont("");
+            }
+            Err(_) => {}
+        };
+
+        let ret = llm_client::history(api_url, api_key, task_id, display_history_cb);
+        handler.lock().unwrap().stop();
+
+        match ret {
+            Ok(_) => return Ok(()),
+            //if this is http chunk error, we could retry...
+            Err(llm_client::CustomError::HttpChunkError) => {
+                i += 1;
+                if i > 5 {
+                    return Err(anyhow!("meet too many erros when receving logs...; please wait and then: autose dev -f <task_id> or autose dev -p <task_id> to download patch."));
+                }
+                std::thread::sleep(Duration::from_secs(15));
+                continue;
+            }
+            Err(e) => {
+                return Err(anyhow!(e));
+            }
         }
-        Err(_) => {}
-    };
-    llm_client::history(api_url, api_key, task_id, display_history)?;
-    Ok(())
+    }
 }
 
 //lint
