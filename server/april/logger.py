@@ -3,15 +3,11 @@ import os
 from typing import Optional
 import sys
 
-
-_FORMAT = "%(levelname)s %(asctime)s %(filename)s:%(lineno)d] %(message)s"
-
+_FORMAT = "%(levelname)s %(asctime)s %(filename)s:%(lineno)d %(message)s"
 _DATE_FORMAT = "%m-%d %H:%M:%S"
-
 
 class NewLineFormatter(logging.Formatter):
     """Adds logging prefix to newlines to align multi-line messages."""
-
     def __init__(self, fmt, datefmt=None):
         logging.Formatter.__init__(self, fmt, datefmt)
 
@@ -21,24 +17,28 @@ class NewLineFormatter(logging.Formatter):
             parts = msg.split(record.message)
             msg = msg.replace("\n", "\r\n" + parts[0])
         return msg
-    
-_default_handler: Optional[logging.Handler] = None
 
-def _setup_logger():
+
+_default_handler: Optional[logging.Handler] = None
+def _setup_default_logger(log_file: Optional[str] = None):
     global _default_handler
     if _default_handler is None:
         _default_handler = logging.StreamHandler(sys.stdout)
         _default_handler.flush = sys.stdout.flush  # type: ignore
-        _default_handler.setLevel(logging.INFO)
         fmt = NewLineFormatter(_FORMAT, datefmt=_DATE_FORMAT)
         _default_handler.setFormatter(fmt)
 
-_setup_logger()
+_setup_default_logger()
 
-
-def init_logger(name: str):
-    global _default_handler
+def init_logger(name: str, log_file: Optional[str] = None):
     logger = logging.getLogger(name)
-    logger.addHandler(_default_handler)
-    logger.setLevel(os.getenv("LOG_LEVEL", "DEBUG"))
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        fmt = NewLineFormatter(_FORMAT, datefmt=_DATE_FORMAT)
+        file_handler.setFormatter(fmt)
+        logger.addHandler(file_handler)
+    else:
+        global _default_handler
+        logger.addHandler(_default_handler)
+    logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
     return logger

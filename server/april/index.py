@@ -16,7 +16,8 @@ import json
 import os
 
 from logger import init_logger
-logger = init_logger(__name__)
+#lint.log record all lint messages.
+logger = init_logger(__name__, "lint.log")
 
 
 openai_template = '''
@@ -261,6 +262,7 @@ class QueryLint(object):
 
         
     def query_lint(self, topic: str, code :str):
+        logger.info(f"lint code len:{len(code)}")
         if self.topic_exist(topic):
             return self._query_rag(topic, code)
         
@@ -270,5 +272,5 @@ class QueryLint(object):
 if __name__ == "__main__":
     with open("../../client/april/src/llm_client.rs") as f:
         code = f.read()
-    index = QueryLint("custom")
+    index = QueryLint("openai")
     print(index.query_lint("XXX", code))
