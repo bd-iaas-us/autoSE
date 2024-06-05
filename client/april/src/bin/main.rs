@@ -150,16 +150,14 @@ struct AILintSupportedTopics {
 fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
     let mut i = 0;
     loop {
-        let msg = if i == 0 {
-            "AI is prepare..., it may take around 1 minutes...".to_string()
+        if i == 0 {
+            println!("AI is prepare..., it may take around 1 minutes...")
         } else {
-            format!(
-                "The network may experience lag or errors, retry({})...\n",
-                i
-            )
-        };
+            println!("The network may experience lag or errors, retry({})...", i);
+            std::thread::sleep(Duration::from_secs(15));
+        }
 
-        let handler = Arc::new(Mutex::new(spinner::SpinnerManager::new(&msg)));
+        let handler = Arc::new(Mutex::new(spinner::SpinnerManager::new("")));
         let handler_clone = handler.clone();
 
         let display_history_cb = move |chunk: &Vec<u8>| match String::from_utf8(chunk.clone()) {
@@ -184,7 +182,6 @@ fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
                 if i > 5 {
                     return Err(anyhow!("meet too many erros when receving logs...; please wait and then: autose dev -f <task_id> or autose dev -p <task_id> to download patch."));
                 }
-                std::thread::sleep(Duration::from_secs(15));
                 continue;
             }
             Err(e) => {

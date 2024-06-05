@@ -234,5 +234,8 @@ def gen_history_data(taskId: str):
             if "submit" in item["action"]:
                 task.set_status(TaskStatus.DONE)
                 return
+            if "exit_cost" in item["action"]:
+                task.set_status(TaskStatus.EXIT_COST)
+                return
         idx = n
 
