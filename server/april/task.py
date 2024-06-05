@@ -8,11 +8,11 @@ logger = init_logger(__name__)
 
 class TaskStatus(Enum):
     NEW = 0
-    INITIALIZED = 1
+    DONE = 1
     RUNNING = 2
-    DONE = 3
-    TIMED_OUT = 4
-    ERROR = -1
+    EXIT_COST = 3
+
+
 
     def __str__(self):
         return str(self.value)
