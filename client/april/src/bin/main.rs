@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, arg_required_else_help = true)]
+#[command(version=env!("GIT_VERSION"), arg_required_else_help = true)]
 struct Cli {
     /// API URL to connect to
     #[arg(
