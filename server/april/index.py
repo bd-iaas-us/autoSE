@@ -14,6 +14,7 @@ from haystack.utils import ComponentDevice, Secret
 from haystack import component
 import json
 import os
+import time
 
 from logger import init_logger
 #lint.log record all lint messages.
@@ -262,11 +263,13 @@ class QueryLint(object):
 
         
     def query_lint(self, topic: str, code :str):
-        logger.info(f"lint code len:{len(code)}")
+        start = time.time()
         if self.topic_exist(topic):
-            return self._query_rag(topic, code)
+            ret= self._query_rag(topic, code)
         
-        return self._query(code)
+        ret = self._query(code)
+        logger.info(f"lint code len:{len(code)}, dur:{time.time() - start:.2f}")
+        return ret
 
 
 if __name__ == "__main__":
