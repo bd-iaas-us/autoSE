@@ -21,15 +21,7 @@ def main(traj_dir :str, lint_file: str):
         df_lint = pd.DataFrame(lint_points)
     else:
         traj_points = metrics.parse_swe_traj(traj_dir)
-        df_traj = pd.DataFrame([{
-            'time': tp.time,
-            'api_calls': tp.api_calls,
-            'tokens_sent': tp.tokens_sent,
-            'tokens_received': tp.tokens_received,
-            'total_cost': tp.total_cost,
-            'instance_cost': tp.instance_cost,
-            'exit_status': tp.exit_status
-        } for tp in traj_points])
+        df_traj = pd.DataFrame([tp.model_dump() for tp in traj_points])
         lint_points = metrics.parse_lint(lint_file)
         df_lint = pd.DataFrame([{"time":lp.time, "dur": lp.dur} for lp in lint_points])
 
