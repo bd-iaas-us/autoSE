@@ -6,3 +6,4 @@ fastapi==0.110.2
 requests==2.31.0
 streamlit==1.34.0
 streamlit_authenticator==0.3.2
+uvicorn==0.30
