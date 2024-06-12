@@ -7,4 +7,3 @@ requests==2.31.0
 streamlit
 watchdog
 streamlit_authenticator
-git
