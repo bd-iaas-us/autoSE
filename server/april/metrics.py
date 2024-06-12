@@ -40,7 +40,11 @@ def parse_swe_traj(directory) -> List[TrajPoint]:
     ret = []
     for ctime, file_content in find_traj_files(directory):
         data = json.loads(file_content)
-        tp = TrajPoint(time=ctime, **data["info"]["model_stats"], exit_status=data["info"]["exit_status"])
+        try:
+            exit_status = data["info"]["exit_status"]
+        except:
+            exit_status = "unknown"
+        tp = TrajPoint(time=ctime, **data["info"]["model_stats"], exit_status=exit_status)
         ret.append(tp)
     return ret
 
@@ -61,16 +65,14 @@ def parse_log_line(line: str) -> LintPoint:
             break
     from logger import DATE_FORMAT
 
-    # 将字符串时间转换为datetime对象
     time_obj = datetime.strptime(datetime_part, DATE_FORMAT)
-    # 创建LintPoint对象
     return LintPoint(time=time_obj, dur=float(duration_str))
 
 def parse_lint(log_path: str) -> List[LintPoint]:
     ret = []
     with open(log_path, 'r') as f:
         for line in f:
-            if "lint code len" in line:  # 确保只解析包含所需信息的行
+            if "lint code len" in line: 
                 lint_point = parse_log_line(line)
                 ret.append(lint_point)
     return ret

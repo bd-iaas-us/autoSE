@@ -6,6 +6,7 @@ use pyo3::wrap_pyfunction;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use walkdir::WalkDir;
 
 #[derive(Debug)]
 struct TrajPoint {
@@ -26,7 +27,7 @@ struct LintPoint {
 
 fn _parse_swe_traj<P: AsRef<Path>>(directory: P) -> Result<Vec<(TrajPoint)>> {
     let mut ret = Vec::new();
-    for entry in fs::read_dir(directory)? {
+    for entry in WalkDir::new(directory).into_iter() {
         let entry = entry?;
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("traj") {
@@ -55,7 +56,7 @@ fn _parse_swe_traj<P: AsRef<Path>>(directory: P) -> Result<Vec<(TrajPoint)>> {
                     .ok_or(anyhow!("Missing instance_cost"))?,
                 exit_status: data["info"]["exit_status"]
                     .as_str()
-                    .ok_or(anyhow!("Missing exit_status"))?
+                    .unwrap_or("unknown")
                     .to_string(),
                 time: creation_datetime.naive_local(),
             });
@@ -105,7 +106,7 @@ fn naive_datetime_to_pydatetime(py: Python, naive_dt: &NaiveDateTime) -> PyResul
         naive_dt.hour() as u8,
         naive_dt.minute() as u8,
         naive_dt.second() as u8,
-        0,    // Convert nanoseconds to microseconds
+        naive_dt.timestamp_subsec_nanos() / 1000,    // Convert nanoseconds to microseconds
         None, // No timezone for naive datetime
     )?;
     Ok(py_datetime.into())

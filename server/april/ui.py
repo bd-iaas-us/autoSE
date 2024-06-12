@@ -13,7 +13,6 @@ except:
 
 def main(traj_dir :str, lint_file: str):
     st.title("Log Visualization")
-
     if has_parse_se_logs:
         lint_points = parse_se_logs.parse_lint_log(lint_file)
         traj_points = parse_se_logs.parse_traj_log(traj_dir)
@@ -33,6 +32,9 @@ def main(traj_dir :str, lint_file: str):
 
     st.write("### Open API tokens send/received Over Time")
     st.bar_chart(df_traj[['time', 'tokens_sent', 'tokens_received']], x="time")
+
+    st.write("### Open API Calls status")
+    st.bar_chart(df_traj[['time', 'exit_status']], x="time")
 
 
     #only time.
