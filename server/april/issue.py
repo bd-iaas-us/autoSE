@@ -44,9 +44,11 @@ class SWEAgent:
         '''
         self.data_path = data_path
         self.repo_path = repo_path
-        if not model.startswith("openai:"):
-            raise Exception("only openai supported")
-        self.model_name = model.split(":")[1]
+        #choose gpt4 or gpt4o
+        if model.startswith("openai:"):
+            self.model_name = model.split(":")[1]
+        else:
+            self.model_name = model
         self.ailint_task = ailint_task
 
     def run(self):

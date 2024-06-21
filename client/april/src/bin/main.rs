@@ -53,6 +53,8 @@ enum DevModel {
     Gpt4o,
     #[clap(name = "openai:gpt4")]
     Gpt4,
+    #[clap(name = "skylark2-32k")]
+    Skylark2_32K,
 }
 
 impl ToStringFromValue for DevModel {}
