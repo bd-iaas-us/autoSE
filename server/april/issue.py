@@ -196,6 +196,12 @@ def handle_prompt(request) -> str:
     prompt_file_name = f'{repo_folder}/prompt_{new_task.get_id()}.txt'
     with open(prompt_file_name, "w") as prompt_file:
         prompt_file.write(request.prompt)
+        #TODO
+        #search vector data based on request.prompt
+        #top 2 docs
+        docs = ...
+        prompt_file.write(docs)
+
  
     new_task.set_status(TaskStatus.RUNNING)
 
