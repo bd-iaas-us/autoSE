@@ -1,6 +1,13 @@
 from index import QueryLint, suppported_topics
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from haystack.dataclasses.document import Document
+from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
+from haystack.components.embedders import SentenceTransformersDocumentEmbedder
+from haystack.components.preprocessors import DocumentSplitter
+from haystack.components.writers import DocumentWriter
+from haystack import Pipeline
+from haystack.document_stores.types import DuplicatePolicy
 from contextlib import asynccontextmanager
 from typing import Union, List, Any, Optional
 from pydantic import BaseModel
@@ -52,6 +59,65 @@ async def supported_topics() -> Response:
     Get the list of supported topics
     """
     return JSONResponse(status_code=200, content={"topics": suppported_topics()})
+
+
+class RegisterRagRequest(BaseModel):
+    docs: List[str]
+
+
+class RegisterRagResponse(BaseModel):
+    status: str
+    message: str
+
+
+# Rag Qdrant Document Store configuration
+rag_collection_name = "documents"
+
+
+@app.post("/rag", dependencies=[Depends(veriy_header)])
+async def register_doc(request: RegisterRagRequest) -> RegisterRagResponse:
+    try:
+        # Initialize Qdrant Document Store
+        document_store = QdrantDocumentStore(
+            host="127.0.0.1",
+            recreate_index=True,
+            return_embedding=True,
+            wait_result_from_api=True,
+            embedding_dim=1024,
+            index=rag_collection_name
+        )
+    except Exception as e:
+        logger.error("Error initializing Qdrant Document Store: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to initialize document store.")
+
+    logger.debug("Received request: %s", request)
+
+    try:
+        # Initialize the embedding model
+        doc_embedder = SentenceTransformersDocumentEmbedder(model="WhereIsAI/UAE-Large-V1")
+    except Exception as e:
+        logger.error("Error initializing document embedder: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to initialize document embedder.")
+
+    try:
+        # Define the processing pipeline
+        pipeline = Pipeline()
+        pipeline.add_component("splitter", DocumentSplitter(split_by="word", split_length=200))
+        pipeline.add_component("embedder", doc_embedder)
+        pipeline.add_component("writer",
+                               DocumentWriter(document_store=document_store, policy=DuplicatePolicy.OVERWRITE))
+
+        # Connect the components
+        pipeline.connect("splitter.documents", "embedder")
+        pipeline.connect("embedder.documents", "writer")
+
+        # Process documents through the pipeline
+        pipeline.run({"splitter": {"documents":[Document(content=doc) for doc in request.docs]}})
+        return RegisterRagResponse(status="success",
+                                   message="Documents successfully registered in the vector database.")
+    except Exception as e:
+        logger.error("Error processing documents: %s", e)
+        return RegisterRagResponse(status="error", message=str(e))
 
 
 class DevRequest(BaseModel):
