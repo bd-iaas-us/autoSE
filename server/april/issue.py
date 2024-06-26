@@ -1,4 +1,3 @@
-
 import os
 import sys
 import json
@@ -8,12 +7,17 @@ from git import Repo
 from fastapi import HTTPException
 from urllib.parse import urlparse
 from task import Task, TaskStatus
+from haystack import Pipeline
+from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
+from haystack_integrations.components.retrievers.qdrant import QdrantEmbeddingRetriever
+from haystack.components.embedders import SentenceTransformersTextEmbedder, SentenceTransformersDocumentEmbedder
+from haystack.utils import ComponentDevice, Secret
 from datetime import datetime, timedelta
 import time
 import git
 from typing import Dict
 
-swe_dir = '/root/git/SWE-agent.new'
+swe_dir = '/Users/bytedance/code/SWE-agent'
 sys.path.append(swe_dir)
 
 import run
@@ -35,6 +39,9 @@ from threading import Thread, Lock
 # Add a mutex to guard tasks for peaceful mind
 tasks_mutex = Lock()
 tasks: Dict[str, Task] = {}
+
+text_embeder = SentenceTransformersTextEmbedder(model="WhereIsAI/UAE-Large-V1", device=ComponentDevice.from_str("cpu"))
+text_embeder.warm_up()
 
 class SWEAgent:
     def __init__(self, data_path, repo_path, ailint_task, model):
@@ -193,10 +200,40 @@ def handle_prompt(request) -> str:
         #return JSONResponse(status_code=400, content={'message': "The repo specified exists or cannot be cloned"})
         raise HTTPException(status_code=400, detail="{the repo specified exists or cannot be cloned")
 
+    try:
+        # Initialize the document store and retriever
+        document_store = QdrantDocumentStore(
+            host="127.0.0.1",
+            embedding_dim=1024,
+            index="documents"
+        )
+        retriever = QdrantEmbeddingRetriever(document_store=document_store)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error initializing document store or retriever: {e}")
+
+    try:
+        # Create a pipeline
+        retrieval_pipeline = Pipeline()
+        retrieval_pipeline.add_component("text_embedder", text_embeder)
+        retrieval_pipeline.add_component("retriever", retriever)
+        retrieval_pipeline.connect("text_embedder.embedding", "retriever.query_embedding")
+        retrieved_docs = retrieval_pipeline.run({"text_embedder": {"text": request.prompt}})
+        top_docs = retrieved_docs["retriever"]["documents"]
+        logger.info(f"top_docs, {top_docs}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during retrieval: {e}")
+
     prompt_file_name = f'{repo_folder}/prompt_{new_task.get_id()}.txt'
-    with open(prompt_file_name, "w") as prompt_file:
-        prompt_file.write(request.prompt)
- 
+    try:
+        with open(prompt_file_name, "w") as prompt_file:
+            prompt_file.write(request.prompt + "\n\n")
+            # Add the top 2 documents into the prompt
+            for idx, doc in enumerate(top_docs, start=1):
+                prompt_file.write(f"Document_{idx} Content: {doc.content}\n\n")
+        logger.info(f"prompt_file_name, {prompt_file_name}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error writing to prompt file: {e}")
+
     new_task.set_status(TaskStatus.RUNNING)
 
     try:
