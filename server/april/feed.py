@@ -1,3 +1,5 @@
+# TODO: use code in rag.py instead of this script
+
 from haystack.dataclasses.document import Document
 from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
 from haystack.components.embedders import SentenceTransformersDocumentEmbedder
