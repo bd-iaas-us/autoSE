@@ -3,6 +3,10 @@ import streamlit as st
 import metrics
 import argparse
 from streamlit_option_menu import option_menu
+from rag import RagDocuments
+from logger import init_logger
+#lint.log record all lint messages.
+logger = init_logger(__name__)
 
 has_parse_se_logs = False
 try:
@@ -11,19 +15,40 @@ try:
 except:
     import metrics
 
+
+
+def display_dataframe(streamlist):
+    df = pd.DataFrame(streamlist, columns=["Items"])
+    print(df)
+
+
 def rag():
     tab1, tab2 = st.tabs(["Upload files", "List files"])
     with tab1:
         st.markdown("<span style='color: red'>only utf-8 text file could be accepted</span>", unsafe_allow_html=True)
         uploaded_files = st.file_uploader("Choose your files", accept_multiple_files=True)
         if uploaded_files:
-            for file in uploaded_files:
-                content = file.getvalue().decode("utf-8")
-                print(content)
-            st.success(f"Uploaded {len(uploaded_files)} files successfully!")
+            docs = [file.getvalue().decode("utf-8") for file in uploaded_files]
+            logger.info(docs)
+            # lazy import
+            try:
+                rag = RagDocuments()
+                rag.register_docs(docs)
+                st.success(f"Uploaded {len(uploaded_files)} files successfully!")
+            except Exception as e:
+                st.error(f"Failed to upload files, please check the log for details {e}")
+                
     with tab2:
-        #search tab
-        st.markdown("TODO")
+        st.markdown("## review the uploaded files, each file could be split into multiple documents")
+        try:
+            rag = RagDocuments()
+            for record in rag.list_docs():
+                st.markdown(f"### Document {record.id}")
+                st.markdown(f"```\
+                            {record.payload['content'][:500]}\
+                            ```")
+        except Exception as e:
+            st.error(f"Failed to List files, please check the log for details {e}")
         
 def metrics(traj_dir :str, lint_file: str):
     if has_parse_se_logs:

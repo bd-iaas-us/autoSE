@@ -22,7 +22,7 @@ class RagDocuments(object):
         logger.debug(f"register docs: {docs}")
         # Define the processing pipeline
         pipeline = Pipeline()
-        pipeline.add_component("splitter", DocumentSplitter(split_by="word", split_length=200))
+        pipeline.add_component("splitter", DocumentSplitter(split_by="word", split_length=5000))
         pipeline.add_component("doc_embedder", get_doc_embedder())
         pipeline.add_component("writer",
                                DocumentWriter(document_store=get_document_store(), policy=DuplicatePolicy.OVERWRITE))
@@ -45,10 +45,27 @@ class RagDocuments(object):
         retrieved_docs = retrieved_docs["retriever"]["documents"]
         logger.debug(f"RAG: {retrieved_docs}")
         return [doc.content for doc in retrieved_docs]
+    
+    def list_docs(self):
+        """
+        list docs is used by ui.py, TODO: support paging on UI
+        return at most 100
+        """
+        import qdrant_client
+        from qdrant_client.http.models import ScrollRequest
+
+        QDRANT_ADDR="http://localhost:6333"
+        client = qdrant_client.QdrantClient(
+            url = QDRANT_ADDR
+        )
+        from common import INDEX_NAME
+        scroll_result = client.scroll(collection_name=INDEX_NAME,limit=100)
+        return scroll_result[0]
+
 
 
 if __name__ == "__main__":
     rag = RagDocuments()
-    rag.register_docs(["hello world", "hello python", "apple"])
-    print(rag.get_doc("python"))
-    print("done")
+    rag.register_docs(["hello world", "hello python", " the capital of us is washington"])
+    print(rag.get_doc("capital"))
+    print(rag.list_docs())
