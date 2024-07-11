@@ -14,12 +14,30 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from logger import init_logger
 logger = init_logger(__name__)
 
-class RagDocuments(object):
+
+class RagDocument(object):
     def __init__(self):
         pass
     
-    def register_docs(self, docs: List[str]):
-        logger.debug(f"register docs: {docs}")
+    def register_doc(self, doc: str, topic: str, document_name: str):
+        logger.debug(f"register doc: {doc}")
+
+        # Get the document store
+        document_store = get_document_store()
+
+        # Check if a document with the same name already exists
+        filters = {"operator": "AND",
+                   "conditions": [
+                       {"field": "meta.topic", "operator": "==", "value": topic},
+                       {"field": "meta.document_name", "operator": "==", "value": document_name}
+                   ]
+                   }
+        existing_docs = document_store.filter_documents(filters)
+
+        if existing_docs:
+            logger.error(f"Document with name '{document_name}' already exists.")
+            raise ValueError(f"Document with name '{document_name}' already exists.")
+
         # Define the processing pipeline
         pipeline = Pipeline()
         pipeline.add_component("splitter", DocumentSplitter(split_by="word", split_length=5000))
@@ -32,13 +50,16 @@ class RagDocuments(object):
         pipeline.connect("doc_embedder.documents", "writer")
 
         # Process documents through the pipeline
-        result = pipeline.run({"splitter": {"documents":[Document(content=doc) for doc in docs]}})
+        document = Document(content=doc, meta={"topic": topic, "document_name": document_name})
+        result = pipeline.run({"splitter": {"documents": [document]}})
         logger.debug(f"register docs result: {result}")
 
-    def get_doc(self, hint: str) -> List[str]:
+    def get_docs(self, hint: str, topic: str) -> List[str]:
         pipeline = Pipeline()
         pipeline.add_component("text_embedder", get_text_embedder())
-        pipeline.add_component("retriever", QdrantEmbeddingRetriever(document_store=get_document_store()))
+        filters = {"field": "meta.topic", "operator": "==", "value": topic}
+        pipeline.add_component("retriever", QdrantEmbeddingRetriever(document_store=get_document_store(),
+                                                                     filters=filters))
         pipeline.connect("text_embedder", "retriever.query_embedding")
         retrieved_docs = pipeline.run({"text_embedder": {"text": hint}})
 
@@ -65,7 +86,8 @@ class RagDocuments(object):
 
 
 if __name__ == "__main__":
-    rag = RagDocuments()
-    rag.register_docs(["hello world", "hello python", " the capital of us is washington"])
-    print(rag.get_doc("capital"))
+    rag = RagDocument()
+    rag.register_doc(doc="The current president of the United States is Joe Biden", topic="President",
+                     document_name="President_Biden_1")
+    print(rag.get_docs("Biden", "President"))
     print(rag.list_docs())
