@@ -33,7 +33,7 @@ WORK_SPACE = tempfile.gettempdir() + "/ailint/workspace"
 
 # Dict for all the tasks 
 from threading import Thread, Lock
-from rag import RagDocuments
+from rag import RagDocument
 
 # Python built-in dict is multi-thread safe for single operation
 # But not for operations like: dict[i] = dick[j], dict[i] += 1 etc
@@ -178,6 +178,7 @@ def clone_repo(url_obj, token = None, folder_suffix =""):
         return True, repo_folder
     return False, repo_folder
 
+
 # The handler function for repo prompt
 def handle_prompt(request) -> str:
     """
@@ -200,21 +201,22 @@ def handle_prompt(request) -> str:
         #return JSONResponse(status_code=400, content={'message': "The repo specified exists or cannot be cloned"})
         raise HTTPException(status_code=400, detail="the repo specified exists or cannot be cloned")
 
-
-    rag = RagDocuments()
-    related_docs = rag.get_doc(request.prompt)
-    #only get the top 2 documents
-    related_docs = related_docs[:2]
-
     prompt_file_name = f'{repo_folder}/prompt_{new_task.get_id()}.txt'
     try:
         with open(prompt_file_name, "w") as prompt_file:
             prompt_file.write(request.prompt + "\n\n")
-            # Add the top 2 documents into the prompt
-            prompt_file.write("Related Documents below:\n")
-            for idx, doc in enumerate(related_docs, start=1):
-                prompt_file.write(f"Document_{idx}: {doc}\n\n")
-        logger.info(f"prompt_file_name, {prompt_file_name}")
+
+            # Use Rag if topic is contained in the request
+            if request.topic:
+                prompt_file.write("Related Documents below:\n")
+                # Add the top 2 documents into the prompt
+                rag = RagDocument()
+                related_docs = rag.get_docs(request.prompt, request.topic)
+                related_docs = related_docs[:2]
+                for idx, doc in enumerate(related_docs, start=1):
+                    prompt_file.write(f"Document_{idx}: {doc}\n\n")
+                logger.info(f"prompt_file_name, {prompt_file_name}")
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error writing to prompt file: {e}")
 

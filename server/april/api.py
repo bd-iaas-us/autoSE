@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 from issue import handle_prompt, handle_task, gen_history_data
-from rag import RagDocuments
+from rag import RagDocument
 from logger import init_logger
 logger = init_logger(__name__)
 
@@ -55,7 +55,9 @@ async def supported_topics() -> Response:
 
 
 class RegisterRagRequest(BaseModel):
-    docs: List[str]
+    doc: str
+    topic: str
+    document_name: str
 
 
 class RegisterRagResponse(BaseModel):
@@ -64,19 +66,22 @@ class RegisterRagResponse(BaseModel):
 
 @app.post("/rag", dependencies=[Depends(veriy_header)])
 async def register_doc(request: RegisterRagRequest) -> RegisterRagResponse:
-    
-    rag = RagDocuments()
-    rag.register_docs(request.docs)
+    rag = RagDocument()
+    rag.register_doc(request.doc, request.topic, request.document_name)
     return RegisterRagResponse()
+
 
 class DevRequest(BaseModel):
     prompt: str
     repo: str
     token: Optional[str] = None
     model: str
+    topic: Optional[str] = None
+
 
 class DevResponse(BaseModel):
     task_id: str
+
 
 @app.post("/dev", dependencies=[Depends(veriy_header)])
 async def dev_task(request: DevRequest) -> DevResponse:
