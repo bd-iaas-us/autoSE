@@ -32,11 +32,11 @@ class RagDocument(object):
                        {"field": "meta.document_name", "operator": "==", "value": document_name}
                    ]
                    }
-        existing_docs = document_store.filter_documents(filters)
+        existing_doc = document_store.filter_documents(filters)
 
-        if existing_docs:
-            logger.error(f"Document with name '{document_name}' already exists.")
-            raise ValueError(f"Document with name '{document_name}' already exists.")
+        if existing_doc:
+            logger.error(f"Document with name '{document_name}' and topic '{topic}' already exists.")
+            raise ValueError(f"Document with name '{document_name}' and topic '{topic}' already exists.")
 
         # Define the processing pipeline
         pipeline = Pipeline()
@@ -83,6 +83,26 @@ class RagDocument(object):
         scroll_result = client.scroll(collection_name=INDEX_NAME,limit=100)
         return scroll_result[0]
 
+    def delete_doc(self, topic: str, document_name: str):
+        # Get the document store
+        document_store = get_document_store()
+
+        # Find the target document
+        filters = {"operator": "AND",
+                   "conditions": [
+                       {"field": "meta.topic", "operator": "==", "value": topic},
+                       {"field": "meta.document_name", "operator": "==", "value": document_name}
+                   ]
+                   }
+        deleting_docs = document_store.filter_documents(filters)
+
+        if not deleting_docs:
+            logger.error(f"Document with name '{document_name}' and topic '{topic}' not found.")
+            raise ValueError(f"Document with name '{document_name}' and topic '{topic}' not found.")
+
+        doc_ids = [doc.id for doc in deleting_docs]
+        document_store.delete_documents(doc_ids)
+        logger.debug(f"Deleted document with name '{document_name}' and topic '{topic}'.")
 
 
 if __name__ == "__main__":
@@ -91,3 +111,4 @@ if __name__ == "__main__":
                      document_name="President_Biden_1")
     print(rag.get_docs("Biden", "President"))
     print(rag.list_docs())
+    rag.delete_doc("President", "President_Biden_1")
