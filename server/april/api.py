@@ -71,6 +71,22 @@ async def register_doc(request: RegisterRagRequest) -> RegisterRagResponse:
     return RegisterRagResponse()
 
 
+class DeleteRagRequest(BaseModel):
+    document_name: str
+    topic: str
+
+
+class DeleteRagResponse(BaseModel):
+    pass
+
+
+@app.post("/delete-rag", dependencies=[Depends(veriy_header)])
+async def delete_doc(request: DeleteRagRequest) -> DeleteRagResponse:
+    rag = RagDocument()
+    rag.delete_doc(request.topic, request.document_name)
+    return DeleteRagResponse()
+
+
 class DevRequest(BaseModel):
     prompt: str
     repo: str
