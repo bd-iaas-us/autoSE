@@ -3,7 +3,7 @@ import streamlit as st
 import metrics
 import argparse
 from streamlit_option_menu import option_menu
-from rag import RagDocuments
+from rag import RagDocument
 from logger import init_logger
 #lint.log record all lint messages.
 logger = init_logger(__name__)
@@ -26,29 +26,67 @@ def rag():
     tab1, tab2 = st.tabs(["Upload files", "List files"])
     with tab1:
         st.markdown("<span style='color: red'>only utf-8 text file could be accepted</span>", unsafe_allow_html=True)
-        uploaded_files = st.file_uploader("Choose your files", accept_multiple_files=True)
-        if uploaded_files:
-            docs = [file.getvalue().decode("utf-8") for file in uploaded_files]
-            logger.info(docs)
+        # Topic input
+        topic = st.text_input("Enter the topic of the document")
+        # Document name input
+        document_name = st.text_input("Enter the name of the document")
+        uploaded_file = st.file_uploader("Choose your files", accept_multiple_files=False)
+        if uploaded_file and topic and document_name:
+            doc = uploaded_file.getvalue().decode("utf-8")
+            logger.info(doc)
             # lazy import
             try:
-                rag = RagDocuments()
-                rag.register_docs(docs)
-                st.success(f"Uploaded {len(uploaded_files)} files successfully!")
+                rag = RagDocument()
+                rag.register_doc(doc, topic, document_name)
+                st.success(f"Uploaded document '{document_name}' successfully!")
             except Exception as e:
                 st.error(f"Failed to upload files, please check the log for details {e}")
-                
+        elif st.button("Upload"):
+            st.error("Please provide a topic, document name, and choose a file to upload.")
+
     with tab2:
-        st.markdown("## review the uploaded files, each file could be split into multiple documents")
+        st.markdown(
+            f'<h4 style="color:black;">Here you can review the uploaded files, and each file could be split into multiple documents</h4>',
+            unsafe_allow_html=True
+        )
         try:
-            rag = RagDocuments()
+            rag = RagDocument()
             for record in rag.list_docs():
-                st.markdown(f"### Document {record.id}")
-                st.markdown(f"```\
-                            {record.payload['content'][:500]}\
-                            ```")
+                st.markdown(
+                    f'<h3 style="color:black;">Document {record.id}</h3>',
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f'<span style="color:dimgrey">Document Id: {record.payload["id"]}</span>',
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f'<span style="color:dimgrey">Document Name: {record.payload["meta"]["document_name"]}</span>',
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f'<span style="color:dimgrey">Topic: {record.payload["meta"]["topic"]}</span>',
+                    unsafe_allow_html=True
+                )
+                col1, col2 = st.columns([0.2, 0.8])
+                with col1:
+                    # Add a preview button
+                    if st.button("Preview", key=f"preview-{record.id}"):
+                        st.markdown(f"```\
+                        {record.payload['content'][:500]}\
+                         ```")
+                with col2:
+                    # Add a delete button
+                    if st.button(f"Delete", key=f"delete-{record.id}"):
+                        try:
+                            rag.delete_doc(record.payload["meta"]["topic"], record.payload["meta"]["document_name"])
+                            st.success(f"Deleted the document successfully!")
+                        except Exception as e:
+                            st.error(f"Failed to delete the document, please check the log for details {e}")
+
         except Exception as e:
             st.error(f"Failed to List files, please check the log for details {e}")
+
         
 def metrics(traj_dir :str, lint_file: str):
     if has_parse_se_logs:
