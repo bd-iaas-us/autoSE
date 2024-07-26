@@ -254,7 +254,6 @@ def gen_history_data(taskId: str):
             item = task.get_history(i)
             yield str(item["action"])
 
-
             #swe-agent could run into error. in this case. should set status to ERROR
             if "submit" in item["action"]:
                 task.set_status(TaskStatus.DONE)
