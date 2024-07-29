@@ -13,16 +13,7 @@ from typing import Dict
 from logger import init_logger
 logger = init_logger(__name__)
 
-sys.path.remove('/root/git/cover-agent')
 import os
-try:
-    cover_dir = os.environ["COVER_DIR"]
-    logger.info(cover_dir)
-except:
-    raise Exception("COVER_DIR is not set...")
-
-sys.path.append(cover_dir)
-logger.info(sys.path)
 
 from cover_agent.CoverAgent import CoverAgent
 from cover_agent.version import __version__
