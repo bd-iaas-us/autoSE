@@ -20,7 +20,6 @@ from cover_agent.version import __version__
 import argparse
 
 from threading import Thread, Lock
-from rag import RagDocuments
 
 tasks_mutex = Lock()
 tasks: Dict[str, Task] = {}

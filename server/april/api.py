@@ -16,7 +16,6 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 from issue import handle_prompt, handle_task, gen_history_data
 from cover import handle_cover, handle_cover_task, gen_cover_history_data
-from rag import RagDocuments
 from logger import init_logger
 logger = init_logger(__name__)
 
