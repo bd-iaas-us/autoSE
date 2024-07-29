@@ -15,7 +15,8 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 from issue import handle_prompt, handle_task, gen_history_data
-from rag import RagDocument
+from cover import handle_cover, handle_cover_task, gen_cover_history_data
+from rag import RagDocuments
 from logger import init_logger
 logger = init_logger(__name__)
 
@@ -193,6 +194,42 @@ async def query(req :LintRequest) -> LintResponse:
         response.risks = []
     return response
 
+class CoverRequest(BaseModel):
+    repo: str
+    source_file: str
+    test_file: str
+    token: Optional[str] = None
+    # model: str
+
+class CoverResponse(BaseModel):
+    task_id: str
+
+@app.post("/cover", dependencies=[Depends(veriy_header)])
+async def cover(request: CoverRequest) -> CoverResponse:
+    """
+    API for handle "cover" sub command
+    repo: repo to git clone
+    source_file: 
+    test_file: 
+    """
+    logger.debug(request)
+
+    return CoverResponse(task_id=handle_cover(request))
+
+class TaskStatus(BaseModel):
+    status :str
+    patch: Optional[str] = None
+
+@app.get("/cover/tasks/{taskId}", dependencies=[Depends(veriy_header)])
+async def getCoverTaskStatus(taskId) -> TaskStatus:
+    status, patch = handle_cover_task(taskId)
+    return TaskStatus(status=status, patch=patch)
+
+    
+
+@app.get("/cover/histories/{taskId}", dependencies=[Depends(veriy_header)])
+async def getCoverHistory(taskId, request: Request) -> StreamingResponse:
+    return StreamingResponse(gen_cover_history_data(taskId), media_type="text/plain")
 
 #uvicorn --reload --port 8000 api:app
 #TODO add arguments

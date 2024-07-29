@@ -26,6 +26,8 @@ class Task:
         self.data_dir = ""
         self.patch_file = None
         self.histories = []
+        self.cover_test_file = ""
+        self.repo_dir = ""
 
 
     def get_id(self):
@@ -66,6 +68,17 @@ class Task:
                     if f.endswith(".patch"):
                         self.patch_file = os.path.join(root, f)
                         return self.patch_file
+        return None
+
+    def set_cover_repo_dir(self, repo):
+        self.repo_dir = repo
+
+    def set_cover_test_file(self, test_file):
+        self.cover_test_file = os.path.join(self.repo_dir, test_file)
+
+    def get_cover_test_file(self):
+        if self.status == TaskStatus.DONE:
+            return self.cover_test_file
         return None
 
     # entry must be a valid json object
