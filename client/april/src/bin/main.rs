@@ -152,16 +152,9 @@ struct AILintSupportedTopics {
     topics: Vec<String>,
 }
 
-fn display_history(api_url: &str, api_key: &str, endpoint: HistoryEndPoint, task_id: &str) -> Result<()> {
+fn display_history(api_url: &str, api_key: &str, endpoint_type: HistoryEndPoint, task_id: &str) -> Result<()> {
     let mut i = 0;
     loop {
-        if i == 0 {
-            println!("AI is prepare..., it may take around 1 minutes...");
-        } else {
-            println!("The network may experience lag or errors, retry({})...", i);
-            thread::sleep(Duration::from_secs(15));
-        }
-
         let handler = Arc::new(Mutex::new(spinner::SpinnerManager::new("")));
         let handler_clone = handler.clone();
 
@@ -176,7 +169,7 @@ fn display_history(api_url: &str, api_key: &str, endpoint: HistoryEndPoint, task
             Err(_) => {}
         };
 
-        let ret = llm_client::history(api_url, api_key, task_id, endpoint, display_history_cb);
+        let ret = llm_client::history(api_url, api_key, task_id, endpoint_type, display_history_cb);
         handler.lock().unwrap().stop();
 
         match ret {
@@ -187,6 +180,8 @@ fn display_history(api_url: &str, api_key: &str, endpoint: HistoryEndPoint, task
                 if i > 5 {
                     return Err(anyhow!("meet too many erros when receving logs...; please wait and then: autose dev -f <task_id> or autose dev -p <task_id> to download patch."));
                 }
+                println!("The network may experience lag or errors, retry({})...", i);
+                thread::sleep(Duration::from_secs(15));
                 continue;
             }
             Err(e) => {
@@ -271,8 +266,8 @@ struct Status {
     patch: Option<String>,
 }
 
-fn download_patch(api_url: &str, api_key: &str, endpoint: StatusEndPoint,  uuid: &str) -> Result<()> {
-    let resp = llm_client::status(api_url, api_key, endpoint, &uuid)?;
+fn download_patch(api_url: &str, api_key: &str, endpoint_type: StatusEndPoint,  uuid: &str) -> Result<()> {
+    let resp = llm_client::status(api_url, api_key, endpoint_type, &uuid)?;
     let status = serde_json::from_str::<Status>(&resp)?;
     if status.status == "DONE" && status.patch.is_some() {
         let file_name = format!("{}.diff", uuid);
@@ -283,9 +278,31 @@ fn download_patch(api_url: &str, api_key: &str, endpoint: StatusEndPoint,  uuid:
         println!("task {} done. saved patch into {}", uuid, file_name);
     } else {
         //display current status
-        println!("task {}'s status is {:?}", uuid, status);
+        println!("TASK NOT DONE");
+        println!("current task {}'s status is {:?}", uuid, status);
     }
     Ok(())
+}
+
+fn fallback_download_patch(api_url :&str, api_key :&str, uuid: &str) -> Result<()> {
+    //try DevStatus and then DevHistory
+    //because remote API
+    let result = download_patch(api_url, api_key, StatusEndPoint::DevStatus, uuid);
+    if result.is_ok() {
+        return result;
+    }
+    return download_patch(api_url, api_key, StatusEndPoint::CoverStatus, uuid);
+}
+
+fn fallback_display_history(api_url :&str, api_key: &str, uuid: &str) -> Result<()>{
+    //try DevStatus and then DevHistory
+    //because remote API
+    let result = display_history(api_url, api_key, HistoryEndPoint::DevHistory, uuid);
+    if result.is_ok() {
+        return result;
+    }
+    return display_history(api_url, api_key, HistoryEndPoint::CoverHistory, uuid)
+
 }
 
 //TODO:
@@ -299,14 +316,11 @@ fn dev(
 ) -> Result<()> {
     //get patch
     if let Some(uuid) = patch {
-        //TODO: FIXME, should use the same endpoint, now only support dev endpoint
-        download_patch(api_url, api_key, StatusEndPoint::DevStatus, &uuid)
+        return fallback_download_patch(api_url, api_key, &uuid)
     //follow history
     } else if let Some(uuid) = follow {
         //follow mode
-        //TODO: FIXME, should use the same endpoint, now only support dev endpoint
-        display_history(api_url, api_key, HistoryEndPoint::DevHistory, &uuid)?;
-        Ok(())
+        return fallback_display_history(api_url, api_key, &uuid);
     //submit task and follow history and then download patch
     } else if let Some(desc_filename) = description_filename {
         let file: File = File::open(desc_filename)?;
@@ -319,10 +333,8 @@ fn dev(
             None => "".to_string(),
         };
 
-        /*
-        dev task should have task description
-        */
-        if let Some(desc) = task.description {
+    
+        if let Some(desc) = task.description /*dev mode*/{
             debug!("{},{},{}", repo, token, desc);
             let resp = llm_client::dev(api_url, api_key, repo, &token, &desc, model)?;
     
@@ -332,12 +344,17 @@ fn dev(
                 "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
                 task.task_id
             );
+
+            println!("AI is prepare..., it may take around 1 minutes...");
             //FIXME: backend is too slow, I have to wait
             display_history(api_url, api_key, HistoryEndPoint::DevHistory, &task.task_id)?;
             download_patch(api_url, api_key, StatusEndPoint::DevStatus, &task.task_id)?;
             Ok(())
-        } else {
+        } else /*cover mode*/ {
+
+            //if only source_file and test_file is set.
             if let (Some(source_file), Some(test_file)) = (task.source_file, task.test_file) {
+
                 let resp = llm_client::cover(api_url, api_key, repo, &token, &source_file, &test_file)?;
                 let task = serde_json::from_str::<Task>(&resp)
                 .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
@@ -345,6 +362,7 @@ fn dev(
                 "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
                 task.task_id
             );
+                println!("AI is prepare..., it may take around 1 minutes...");
                 display_history(api_url, api_key, HistoryEndPoint::CoverHistory, &task.task_id)?;
                 download_patch(api_url, api_key, StatusEndPoint::CoverStatus, &task.task_id)?;
                 Ok(())

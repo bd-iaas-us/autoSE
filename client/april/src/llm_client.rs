@@ -143,7 +143,11 @@ pub fn history(
         };
         match part {
             ehttp::streaming::Part::Response(response) => {
-                debug!("history response: {:?}", response)
+                debug!("history response: {:?}", response);
+                if response.ok == false {
+                    let _ = tx.send(Err(CustomError::HttpError(response.status_text)));
+                    return ControlFlow::Break(());
+                }
             }
             ehttp::streaming::Part::Chunk(chunk) => {
                 debug!("chunk recved {:?}", chunk);
