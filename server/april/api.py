@@ -128,6 +128,9 @@ async def getTaskStatus(taskId) -> TaskStatus:
 
 @app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getHistory(taskId, request: Request) -> StreamingResponse:
+    from issue import get_task
+    if get_task(taskId) is None:
+        raise HTTPException(status_code=400, detail = f"The task {taskId} does not exist")
     return StreamingResponse(gen_history_data(taskId), media_type="text/plain")
 
 
@@ -228,6 +231,9 @@ async def getCoverTaskStatus(taskId) -> TaskStatus:
 
 @app.get("/cover/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getCoverHistory(taskId, request: Request) -> StreamingResponse:
+    from cover import get_task
+    if get_task(taskId) is None:
+        raise HTTPException(status_code=400, detail = f"The task {taskId} does not exist")
     return StreamingResponse(gen_cover_history_data(taskId), media_type="text/plain")
 
 #uvicorn --reload --port 8000 api:app

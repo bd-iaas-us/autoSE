@@ -135,6 +135,7 @@ def gen_github_api_url(url_obj):
 # Here we don't use a global lock to guard "tasks",  
 def get_task(taskId):
     with tasks_mutex:
+        logger.info(f"get_task !!! {tasks}")
         if taskId in tasks:
             return tasks[taskId]
     return None
@@ -150,10 +151,8 @@ def handle_task(taskId) -> tuple[str, str]:
     return a tuple[status, patch]
     """
     logger.info(f'getting task info for taskId: {taskId}')
-
+    #outer logic will make sure taskId exists.
     task = get_task(taskId)
-    if task is None:
-        raise HTTPException(status_code=400, detail = f"The task {taskId} does not exist")
     # get patch
     patch_file = task.get_patch_file()
     patch = ""
@@ -232,14 +231,11 @@ def handle_prompt(request) -> str:
 
 # NOTE: The function can not be called with gen_history_data at the same time
 def gen_history_data(taskId: str):
+    #outer logic will make sure taskId exists.
     task = get_task(taskId)
-    logger.info(f'get task: {task}')
-    if task is None:
-        raise HTTPException(status_code=400, detail=f"do not find the taskid {taskId}")
-
     idx = 0
     last_update = datetime.now()
-    logger.info(f'----------- start processing the history for task {task.get_id()} at {datetime.now()}')
+    logger.info(f'----------- start processing the history for task {task} at {datetime.now()}')
     while True:
         n = task.get_history_len()
         if n == idx:

@@ -137,7 +137,7 @@ class Agent:
 
 def handle_cover(request) -> str:
     new_task = Task("cover task")
-    logger.info(f'new_task: {new_task}')
+    logger.info(f'new_task: {new_task.get_id()}')
     add_task(new_task)
     try:
         url_obj = urlparse(request.repo)
@@ -189,9 +189,6 @@ def handle_cover_task(taskId) -> tuple[str, str]:
 def gen_cover_history_data(taskId: str):
     task = get_task(taskId)
     logger.info(f'get task: {task}')
-    if task is None:
-        raise HTTPException(status_code=400, detail=f"do not find the taskid {taskId}")
-
     idx = 0
     last_update = datetime.now()
     logger.info(f'----------- start processing the history for task {task.get_id()} at {datetime.now()}')
