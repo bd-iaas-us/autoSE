@@ -1,8 +1,10 @@
 use anyhow::{anyhow, Result};
 use april::llm_client;
+use april::llm_client::{HistoryEndPoint, StatusEndPoint};
 use april::utils::git;
 use april::utils::markdown;
 use april::utils::spinner;
+use clap::CommandFactory;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use lazy_static::lazy_static;
@@ -150,7 +152,7 @@ struct AILintSupportedTopics {
     topics: Vec<String>,
 }
 
-fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
+fn display_history(api_url: &str, api_key: &str, endpoint: HistoryEndPoint, task_id: &str) -> Result<()> {
     let mut i = 0;
     loop {
         if i == 0 {
@@ -174,7 +176,7 @@ fn display_history(api_url: &str, api_key: &str, task_id: &str) -> Result<()> {
             Err(_) => {}
         };
 
-        let ret = llm_client::history(api_url, api_key, task_id, display_history_cb);
+        let ret = llm_client::history(api_url, api_key, task_id, endpoint, display_history_cb);
         handler.lock().unwrap().stop();
 
         match ret {
@@ -252,8 +254,10 @@ fn lint(
 #[derive(Debug, Deserialize)]
 struct DevTask {
     repo: String,
-    description: String,
+    description: Option<String>,
     token: Option<String>,
+    source_file: Option<String>,
+    test_file: Option<String>
 }
 
 #[derive(Debug, Deserialize)]
@@ -267,8 +271,8 @@ struct Status {
     patch: Option<String>,
 }
 
-fn download_patch(api_url: &str, api_key: &str, uuid: &str) -> Result<()> {
-    let resp = llm_client::status(api_url, api_key, &uuid)?;
+fn download_patch(api_url: &str, api_key: &str, endpoint: StatusEndPoint,  uuid: &str) -> Result<()> {
+    let resp = llm_client::status(api_url, api_key, endpoint, &uuid)?;
     let status = serde_json::from_str::<Status>(&resp)?;
     if status.status == "DONE" && status.patch.is_some() {
         let file_name = format!("{}.diff", uuid);
@@ -295,15 +299,17 @@ fn dev(
 ) -> Result<()> {
     //get patch
     if let Some(uuid) = patch {
-        download_patch(api_url, api_key, &uuid)
+        //TODO: FIXME, should use the same endpoint, now only support dev endpoint
+        download_patch(api_url, api_key, StatusEndPoint::DevStatus, &uuid)
     //follow history
     } else if let Some(uuid) = follow {
         //follow mode
-        display_history(api_url, api_key, &uuid)?;
+        //TODO: FIXME, should use the same endpoint, now only support dev endpoint
+        display_history(api_url, api_key, HistoryEndPoint::DevHistory, &uuid)?;
         Ok(())
-    //submit task and follow history.
+    //submit task and follow history and then download patch
     } else if let Some(desc_filename) = description_filename {
-        let file = File::open(desc_filename)?;
+        let file: File = File::open(desc_filename)?;
         let reader = BufReader::new(file);
         let task: DevTask = serde_yaml::from_reader(reader).expect("Failed to parse YAML");
 
@@ -312,27 +318,46 @@ fn dev(
             Some(token) => token,
             None => "".to_string(),
         };
-        let desc = task.description;
-        /*
-        //read local yml file. get this paramters.
-        let repo = "https://github.com/bd-iaas-us/AILint.git";
-        let token = "FAKE_TOKEN";
-        */
-        debug!("{},{},{}", repo, token, desc);
-        let resp = llm_client::dev(api_url, api_key, repo, &token, &desc, model)?;
 
-        let task = serde_json::from_str::<Task>(&resp)
-            .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
-        println!(
-            "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
-            task.task_id
-        );
-        //FIXME: backend is too slow, I have to wait
-        display_history(api_url, api_key, &task.task_id)?;
-        download_patch(api_url, api_key, &task.task_id)?;
-        Ok(())
+        /*
+        dev task should have task description
+        */
+        if let Some(desc) = task.description {
+            debug!("{},{},{}", repo, token, desc);
+            let resp = llm_client::dev(api_url, api_key, repo, &token, &desc, model)?;
+    
+            let task = serde_json::from_str::<Task>(&resp)
+                .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
+            println!(
+                "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
+                task.task_id
+            );
+            //FIXME: backend is too slow, I have to wait
+            display_history(api_url, api_key, HistoryEndPoint::DevHistory, &task.task_id)?;
+            download_patch(api_url, api_key, StatusEndPoint::DevStatus, &task.task_id)?;
+            Ok(())
+        } else {
+            if let (Some(source_file), Some(test_file)) = (task.source_file, task.test_file) {
+                let resp = llm_client::cover(api_url, api_key, repo, &token, &source_file, &test_file)?;
+                let task = serde_json::from_str::<Task>(&resp)
+                .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
+            println!(
+                "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
+                task.task_id
+            );
+                display_history(api_url, api_key, HistoryEndPoint::CoverHistory, &task.task_id)?;
+                download_patch(api_url, api_key, StatusEndPoint::CoverStatus, &task.task_id)?;
+                Ok(())
+            } else {
+                println!("cover mode should provide test_file/source_file");
+                Ok(())
+            }
+
+        }
+
+
     } else {
-        println!("print usage");
+        Cli::command().print_help()?;
         Ok(())
     }
 }
