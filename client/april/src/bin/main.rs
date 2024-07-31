@@ -152,7 +152,12 @@ struct AILintSupportedTopics {
     topics: Vec<String>,
 }
 
-fn display_history(api_url: &str, api_key: &str, endpoint_type: HistoryEndPoint, task_id: &str) -> Result<()> {
+fn display_history(
+    api_url: &str,
+    api_key: &str,
+    endpoint_type: HistoryEndPoint,
+    task_id: &str,
+) -> Result<()> {
     let mut i = 0;
     loop {
         let handler = Arc::new(Mutex::new(spinner::SpinnerManager::new("")));
@@ -252,7 +257,7 @@ struct DevTask {
     description: Option<String>,
     token: Option<String>,
     source_file: Option<String>,
-    test_file: Option<String>
+    test_file: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -266,7 +271,12 @@ struct Status {
     patch: Option<String>,
 }
 
-fn download_patch(api_url: &str, api_key: &str, endpoint_type: StatusEndPoint,  uuid: &str) -> Result<()> {
+fn download_patch(
+    api_url: &str,
+    api_key: &str,
+    endpoint_type: StatusEndPoint,
+    uuid: &str,
+) -> Result<()> {
     let resp = llm_client::status(api_url, api_key, endpoint_type, &uuid)?;
     let status = serde_json::from_str::<Status>(&resp)?;
     if status.status == "DONE" && status.patch.is_some() {
@@ -284,7 +294,7 @@ fn download_patch(api_url: &str, api_key: &str, endpoint_type: StatusEndPoint,  
     Ok(())
 }
 
-fn fallback_download_patch(api_url :&str, api_key :&str, uuid: &str) -> Result<()> {
+fn fallback_download_patch(api_url: &str, api_key: &str, uuid: &str) -> Result<()> {
     //try DevStatus and then DevHistory
     //because remote API
     let result = download_patch(api_url, api_key, StatusEndPoint::DevStatus, uuid);
@@ -294,15 +304,14 @@ fn fallback_download_patch(api_url :&str, api_key :&str, uuid: &str) -> Result<(
     return download_patch(api_url, api_key, StatusEndPoint::CoverStatus, uuid);
 }
 
-fn fallback_display_history(api_url :&str, api_key: &str, uuid: &str) -> Result<()>{
+fn fallback_display_history(api_url: &str, api_key: &str, uuid: &str) -> Result<()> {
     //try DevStatus and then DevHistory
     //because remote API
     let result = display_history(api_url, api_key, HistoryEndPoint::DevHistory, uuid);
     if result.is_ok() {
         return result;
     }
-    return display_history(api_url, api_key, HistoryEndPoint::CoverHistory, uuid)
-
+    return display_history(api_url, api_key, HistoryEndPoint::CoverHistory, uuid);
 }
 
 //TODO:
@@ -316,7 +325,7 @@ fn dev(
 ) -> Result<()> {
     //get patch
     if let Some(uuid) = patch {
-        return fallback_download_patch(api_url, api_key, &uuid)
+        return fallback_download_patch(api_url, api_key, &uuid);
     //follow history
     } else if let Some(uuid) = follow {
         //follow mode
@@ -333,11 +342,12 @@ fn dev(
             None => "".to_string(),
         };
 
-    
-        if let Some(desc) = task.description /*dev mode*/{
+        if let Some(desc) = task.description
+        /*dev mode*/
+        {
             debug!("{},{},{}", repo, token, desc);
             let resp = llm_client::dev(api_url, api_key, repo, &token, &desc, model)?;
-    
+
             let task = serde_json::from_str::<Task>(&resp)
                 .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
             println!(
@@ -350,30 +360,33 @@ fn dev(
             display_history(api_url, api_key, HistoryEndPoint::DevHistory, &task.task_id)?;
             download_patch(api_url, api_key, StatusEndPoint::DevStatus, &task.task_id)?;
             Ok(())
-        } else /*cover mode*/ {
-
+        } else
+        /*cover mode*/
+        {
             //if only source_file and test_file is set.
             if let (Some(source_file), Some(test_file)) = (task.source_file, task.test_file) {
-
-                let resp = llm_client::cover(api_url, api_key, repo, &token, &source_file, &test_file)?;
+                let resp =
+                    llm_client::cover(api_url, api_key, repo, &token, &source_file, &test_file)?;
                 let task = serde_json::from_str::<Task>(&resp)
-                .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
-            println!(
-                "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
-                task.task_id
-            );
+                    .map_err(|e| anyhow!("can not parse response for submitting dev {}", e))?;
+                println!(
+                    "TASK {} is accepted...\nDisplaying the log of AI thoughts...\n",
+                    task.task_id
+                );
                 println!("AI is prepare..., it may take around 1 minutes...");
-                display_history(api_url, api_key, HistoryEndPoint::CoverHistory, &task.task_id)?;
+                display_history(
+                    api_url,
+                    api_key,
+                    HistoryEndPoint::CoverHistory,
+                    &task.task_id,
+                )?;
                 download_patch(api_url, api_key, StatusEndPoint::CoverStatus, &task.task_id)?;
                 Ok(())
             } else {
                 println!("cover mode should provide test_file/source_file");
                 Ok(())
             }
-
         }
-
-
     } else {
         Cli::command().print_help()?;
         Ok(())

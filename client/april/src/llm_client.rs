@@ -78,7 +78,8 @@ pub fn dev(
 }
 
 pub fn status(url: &str, api_key: &str, endpoint: StatusEndPoint, id: &str) -> Result<String> {
-    let mut request = ehttp::Request::get(format!("{}{}{}", url, endpoint.to_string(), id).as_str());
+    let mut request =
+        ehttp::Request::get(format!("{}{}{}", url, endpoint.to_string(), id).as_str());
     request.headers.insert("Authorization", api_key);
     request.headers.insert("Content-Type", "application/json");
     block_fetching(request)
@@ -92,23 +93,22 @@ pub enum StatusEndPoint {
 impl ToString for StatusEndPoint {
     fn to_string(&self) -> String {
         match self {
-            StatusEndPoint::DevStatus =>  "/dev/tasks/".to_owned(),
-            StatusEndPoint::CoverStatus => "/cover/tasks/".to_owned()
+            StatusEndPoint::DevStatus => "/dev/tasks/".to_owned(),
+            StatusEndPoint::CoverStatus => "/cover/tasks/".to_owned(),
         }
     }
 }
 
-
 #[derive(Copy, Clone, Debug)]
 pub enum HistoryEndPoint {
     DevHistory,
-    CoverHistory
+    CoverHistory,
 }
 impl ToString for HistoryEndPoint {
     fn to_string(&self) -> String {
         match self {
             HistoryEndPoint::DevHistory => "/dev/histories/".to_owned(),
-            HistoryEndPoint::CoverHistory => "/cover/histories/".to_owned()
+            HistoryEndPoint::CoverHistory => "/cover/histories/".to_owned(),
         }
     }
 }
@@ -120,7 +120,8 @@ pub fn history(
     endpoint: HistoryEndPoint,
     callback: impl Fn(&Vec<u8>) + Send + 'static,
 ) -> Result<()> {
-    let mut request = ehttp::Request::get(format!("{}{}{}", url, endpoint.to_string(), id,).as_str());
+    let mut request =
+        ehttp::Request::get(format!("{}{}{}", url, endpoint.to_string(), id,).as_str());
     request.headers.insert("Authorization", api_key);
     request.headers.insert("Content-Type", "application/json");
 
@@ -187,31 +188,32 @@ pub fn lint(url: &str, api_key: &str, topic: &str, code: &str, model: &str) -> R
 }
 
 /*
-example: curl --location 'http://[::]:8000/cover' 
---header 'Authorization: XXX' 
---header 'Content-Type: application/json' 
---data '{"repo":"https://github.com/Codium-ai/cover-agent", 
+example: curl --location 'http://[::]:8000/cover'
+--header 'Authorization: XXX'
+--header 'Content-Type: application/json'
+--data '{"repo":"https://github.com/Codium-ai/cover-agent",
 "source_file":"templated_tests/go_webservice/app.go",
 "test_file":"templated_tests/go_webservice/app_test.go"}
 */
 
-pub fn cover(url: &str,
-     api_key: &str,
-     repo: &str,
-     token: &str,
-     source_file: &str,
-     test_file: &str,
-    ) -> Result<String> {
-        let message = json!({
+pub fn cover(
+    url: &str,
+    api_key: &str,
+    repo: &str,
+    token: &str,
+    source_file: &str,
+    test_file: &str,
+) -> Result<String> {
+    let message = json!({
             "repo": repo,
             "token": token,
             "source_file": source_file,
             "test_file": test_file,});
-        let mut request = ehttp::Request::post(
-                format!("{}/cover", url).as_str(),
-                serde_json::to_vec(&message).unwrap(),
-        );
-        request.headers.insert("Authorization", api_key);
-        request.headers.insert("Content-Type", "application/json");
-        block_fetching(request)   
-    }
+    let mut request = ehttp::Request::post(
+        format!("{}/cover", url).as_str(),
+        serde_json::to_vec(&message).unwrap(),
+    );
+    request.headers.insert("Authorization", api_key);
+    request.headers.insert("Content-Type", "application/json");
+    block_fetching(request)
+}
