@@ -1,32 +1,28 @@
-from index import QueryLint, suppported_topics
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+import json
+import os
 from contextlib import asynccontextmanager
-from typing import Union, List, Any, Optional
-from pydantic import BaseModel
-
+from typing import List, Optional
 
 import uvicorn
-import json
-import asyncio
-
+from cover import gen_cover_history_data, handle_cover, handle_cover_task
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-import os
-from issue import handle_prompt, handle_task, gen_history_data
-from cover import handle_cover, handle_cover_task, gen_cover_history_data
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from index import QueryLint, suppported_topics
+from issue import gen_history_data, handle_prompt, handle_task
 from logger import init_logger
-logger = init_logger(__name__)
+from pydantic import BaseModel
+from rag import RagDocument
 
+logger = init_logger(__name__)
 
 
 def veriy_header(request: Request):
     if request.headers.get("Authorization") != os.getenv("API_KEY"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect API key",
-            headers={"WWW-Authenticate": "Basic"})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Incorrect API key",
+                            headers={"WWW-Authenticate": "Basic"})
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +31,7 @@ async def lifespan(app: FastAPI):
     yield
     # Clean up the ML models and release the resources
     logger.info("quiting...")
+
 
 app = FastAPI(lifespan=lifespan, logger=logger)
 
@@ -46,12 +43,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/supported_topics", dependencies=[Depends(veriy_header)])
 async def supported_topics() -> Response:
     """
     Get the list of supported topics
     """
-    return JSONResponse(status_code=200, content={"topics": suppported_topics()})
+    return JSONResponse(status_code=200,
+                        content={"topics": suppported_topics()})
 
 
 class RegisterRagRequest(BaseModel):
@@ -115,24 +114,25 @@ async def dev_task(request: DevRequest) -> DevResponse:
 
     return DevResponse(task_id=handle_prompt(request))
 
+
 class TaskStatus(BaseModel):
-    status :str
+    status: str
     patch: Optional[str] = None
+
 
 @app.get("/dev/tasks/{taskId}", dependencies=[Depends(veriy_header)])
 async def getTaskStatus(taskId) -> TaskStatus:
     status, patch = handle_task(taskId)
     return TaskStatus(status=status, patch=patch)
 
-    
 
 @app.get("/dev/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getHistory(taskId, request: Request) -> StreamingResponse:
     from issue import get_task
     if get_task(taskId) is None:
-        raise HTTPException(status_code=400, detail = f"The task {taskId} does not exist")
+        raise HTTPException(status_code=400,
+                            detail=f"The task {taskId} does not exist")
     return StreamingResponse(gen_history_data(taskId), media_type="text/plain")
-
 
 
 class LintRequest(BaseModel):
@@ -145,16 +145,17 @@ class LintRequest(BaseModel):
     openai:gpt4
     ...
     ollama:llama3
-    """    
+    """
     model: str
+
 
 class LintResponse(BaseModel):
     """
     backend is deprecated.
     """
     backend: Optional[str] = None
-    plain_risks : str
-    risks : List
+    plain_risks: str
+    risks: List
     """
     model should follow this format:
     org:model
@@ -162,25 +163,25 @@ class LintResponse(BaseModel):
     openai:gpt4
     ...
     ollama:llama3
-    """    
+    """
     model: str
 
 
 @app.post("/lint", dependencies=[Depends(veriy_header)])
-async def query(req :LintRequest) -> LintResponse:
+async def query(req: LintRequest) -> LintResponse:
     """
     test: curl -X POST "http://127.0.0.1:8000/lint" -H "Content-Type: application/json" -d '{"topic": "your_topic", "code": "your_code"}'
     request: Lint
     response: {}
     """
     logger.debug(LintRequest)
-    try: 
+    try:
         model = req.model
         ai = "openai"
         #FIXME: QueryLint should support choosing models
         llm_response = QueryLint(ai).query_lint(req.topic, req.code)
     except Exception as e:
-        raise HTTPException(status_code=500, detail = f"{e}")
+        raise HTTPException(status_code=500, detail=f"{e}")
 
     response = LintResponse(model="openai:gpt3.5", plain_risks="", risks=[])
     if model.startswith("openai"):
@@ -196,6 +197,7 @@ async def query(req :LintRequest) -> LintResponse:
         response.risks = []
     return response
 
+
 class CoverRequest(BaseModel):
     repo: str
     source_file: str
@@ -203,8 +205,10 @@ class CoverRequest(BaseModel):
     token: Optional[str] = None
     # model: str
 
+
 class CoverResponse(BaseModel):
     task_id: str
+
 
 @app.post("/cover", dependencies=[Depends(veriy_header)])
 async def cover(request: CoverRequest) -> CoverResponse:
@@ -218,23 +222,27 @@ async def cover(request: CoverRequest) -> CoverResponse:
 
     return CoverResponse(task_id=handle_cover(request))
 
+
 class TaskStatus(BaseModel):
-    status :str
+    status: str
     patch: Optional[str] = None
+
 
 @app.get("/cover/tasks/{taskId}", dependencies=[Depends(veriy_header)])
 async def getCoverTaskStatus(taskId) -> TaskStatus:
     status, patch = handle_cover_task(taskId)
     return TaskStatus(status=status, patch=patch)
 
-    
 
 @app.get("/cover/histories/{taskId}", dependencies=[Depends(veriy_header)])
 async def getCoverHistory(taskId, request: Request) -> StreamingResponse:
     from cover import get_task
     if get_task(taskId) is None:
-        raise HTTPException(status_code=400, detail = f"The task {taskId} does not exist")
-    return StreamingResponse(gen_cover_history_data(taskId), media_type="text/plain")
+        raise HTTPException(status_code=400,
+                            detail=f"The task {taskId} does not exist")
+    return StreamingResponse(gen_cover_history_data(taskId),
+                             media_type="text/plain")
+
 
 #uvicorn --reload --port 8000 api:app
 #TODO add arguments

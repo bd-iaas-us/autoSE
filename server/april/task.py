@@ -1,10 +1,12 @@
-from enum import Enum
-import uuid
-from datetime import datetime
 import os
-from threading import Thread, Lock
+import uuid
+from enum import Enum
+from threading import Lock
+
 from logger import init_logger
+
 logger = init_logger(__name__)
+
 
 class TaskStatus(Enum):
     NEW = 0
@@ -12,12 +14,12 @@ class TaskStatus(Enum):
     RUNNING = 2
     EXIT_COST = 3
 
-
-
     def __str__(self):
         return str(self.value)
 
+
 class Task:
+
     def __init__(self, title):
         self._lock = Lock()
         self.title = title
@@ -28,7 +30,6 @@ class Task:
         self.histories = []
         self.cover_test_file = ""
         self.repo_dir = ""
-
 
     def get_id(self):
         with self._lock:
@@ -41,7 +42,7 @@ class Task:
     def get_status(self):
         with self._lock:
             return self.status
-    
+
     def set_data_dir(self, dir):
         with self._lock:
             self.data_dir = dir
@@ -52,7 +53,9 @@ class Task:
             return self.history_file
 
         with self._lock:
-            files = [f for f in os.listdir(self.data_dir) if f.endswith("traj")]
+            files = [
+                f for f in os.listdir(self.data_dir) if f.endswith("traj")
+            ]
             if len(files) > 0:
                 self.history_file = self.data_dir + "/" + files[0]
         return self.history_file
@@ -95,4 +98,3 @@ class Task:
 
     def clear_history(self):
         self.histories.clear()
-

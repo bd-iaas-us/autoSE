@@ -1,28 +1,23 @@
+import argparse
 import os
-import sys
-from fastapi import HTTPException
-from urllib.parse import urlparse
-from task import Task, TaskStatus
-import utils
-
-from datetime import datetime, timedelta
 import time
-
+from datetime import datetime, timedelta
+from threading import Lock, Thread
 from typing import Dict
+from urllib.parse import urlparse
 
-from logger import init_logger
-logger = init_logger(__name__)
-
-import os
-
+import utils
 from cover_agent.CoverAgent import CoverAgent
 from cover_agent.version import __version__
-import argparse
+from fastapi import HTTPException
+from logger import init_logger
+from task import Task, TaskStatus
 
-from threading import Thread, Lock
+logger = init_logger(__name__)
 
 tasks_mutex = Lock()
 tasks: Dict[str, Task] = {}
+
 
 def get_task(taskId):
     with tasks_mutex:
@@ -30,12 +25,15 @@ def get_task(taskId):
             return tasks[taskId]
     return None
 
+
 def add_task(task: Task):
     with tasks_mutex:
         # task id is a UUID, dup not checked here
         tasks[task.id] = task
 
+
 class Agent:
+
     def __init__(self, repo_path, source_file_path, test_file_path, task):
         self.repo_path = repo_path
         self.source_file_path = source_file_path
@@ -51,13 +49,14 @@ class Agent:
         # logger.info(f'sys.argv: {sys.argv}')
         # main.main()
 
-        parser = argparse.ArgumentParser(description=f"Cover Agent v{__version__}")
-        parser.add_argument(
-            "--source-file-path", required=True, help="Path to the source file."
-        )
-        parser.add_argument(
-            "--test-file-path", required=True, help="Path to the input test file."
-        )
+        parser = argparse.ArgumentParser(
+            description=f"Cover Agent v{__version__}")
+        parser.add_argument("--source-file-path",
+                            required=True,
+                            help="Path to the source file.")
+        parser.add_argument("--test-file-path",
+                            required=True,
+                            help="Path to the input test file.")
         parser.add_argument(
             "--test-file-output-path",
             required=False,
@@ -78,13 +77,15 @@ class Agent:
         parser.add_argument(
             "--test-command-dir",
             default=os.getcwd(),
-            help="The directory to run the test command in. Default: %(default)s.",
+            help=
+            "The directory to run the test command in. Default: %(default)s.",
         )
         parser.add_argument(
             "--included-files",
             default=None,
             nargs="*",
-            help='List of files to include in the coverage. For example, "--included-files library1.c library2.c." Default: %(default)s.',
+            help=
+            'List of files to include in the coverage. For example, "--included-files library1.c library2.c." Default: %(default)s.',
         )
         parser.add_argument(
             "--coverage-type",
@@ -111,7 +112,8 @@ class Agent:
         parser.add_argument(
             "--additional-instructions",
             default="",
-            help="Any additional instructions you wish to append at the end of the prompt. Default: %(default)s.",
+            help=
+            "Any additional instructions you wish to append at the end of the prompt. Default: %(default)s.",
         )
         parser.add_argument(
             "--model",
@@ -121,19 +123,29 @@ class Agent:
         parser.add_argument(
             "--api-base",
             default="http://localhost:11434",
-            help="The API url to use for Ollama or Hugging Face. Default: %(default)s.",
+            help=
+            "The API url to use for Ollama or Hugging Face. Default: %(default)s.",
         )
         parser.add_argument(
             "--strict-coverage",
             action="store_true",
-            help="If set, Cover-Agent will return a non-zero exit code if the desired code coverage is not achieved. Default: False.",
+            help=
+            "If set, Cover-Agent will return a non-zero exit code if the desired code coverage is not achieved. Default: False.",
         )
-        
-        args = parser.parse_args(['--source-file-path', self.source_file_path, '--test-file-path', self.test_file_path, '--code-coverage-report-path', os.path.join(test_dir, 'coverage.xml'), '--test-command', '/usr/local/go/bin/go test -coverprofile=coverage.out && /root/go/bin/gocov convert coverage.out | /root/go/bin/gocov-xml > coverage.xml', '--test-command-dir', test_dir, '--coverage-type', 'cobertura', '--desired-coverage', '50', '--max-iterations', '1'])        
+
+        args = parser.parse_args([
+            '--source-file-path', self.source_file_path, '--test-file-path',
+            self.test_file_path, '--code-coverage-report-path',
+            os.path.join(test_dir, 'coverage.xml'), '--test-command',
+            '/usr/local/go/bin/go test -coverprofile=coverage.out && /root/go/bin/gocov convert coverage.out | /root/go/bin/gocov-xml > coverage.xml',
+            '--test-command-dir', test_dir, '--coverage-type', 'cobertura',
+            '--desired-coverage', '50', '--max-iterations', '1'
+        ])
         logger.info(args)
 
         agent = CoverAgent(args, self.task)
         Thread(target=agent.run).start()
+
 
 def handle_cover(request) -> str:
     new_task = Task("cover task")
@@ -143,20 +155,24 @@ def handle_cover(request) -> str:
         url_obj = urlparse(request.repo)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"{e}")
-    
-    success, repo_folder = utils.clone_repo(url_obj, request.token, utils.gen_folder_suffix())
+
+    success, repo_folder = utils.clone_repo(url_obj, request.token,
+                                            utils.gen_folder_suffix())
     if not success:
         #return JSONResponse(status_code=400, content={'message': "The repo specified exists or cannot be cloned"})
-        raise HTTPException(status_code=400, detail="the repo specified exists or cannot be cloned")
+        raise HTTPException(
+            status_code=400,
+            detail="the repo specified exists or cannot be cloned")
 
     source_file_path = os.path.join(repo_folder, request.source_file)
     test_file_path = os.path.join(repo_folder, request.test_file)
 
     if not os.path.isfile(source_file_path):
-        raise HTTPException(status_code=400, detail="source file doesn't exist")
+        raise HTTPException(status_code=400,
+                            detail="source file doesn't exist")
 
     if not os.path.isfile(test_file_path):
-        raise HTTPException(status_code=400, detail="test file doesn't exist")        
+        raise HTTPException(status_code=400, detail="test file doesn't exist")
 
     new_task.set_status(TaskStatus.RUNNING)
 
@@ -166,15 +182,17 @@ def handle_cover(request) -> str:
         new_task.set_cover_repo_dir(repo_folder)
         new_task.set_cover_test_file(test_file_path)
     except Exception as e:
-        raise HTTPException(status_code=500, detail = f"{e}")
+        raise HTTPException(status_code=500, detail=f"{e}")
     return new_task.get_id()
+
 
 def handle_cover_task(taskId) -> tuple[str, str]:
     logger.info(f'getting task info for taskId: {taskId}')
 
     task = get_task(taskId)
     if task is None:
-        raise HTTPException(status_code=400, detail = f"The task {taskId} does not exist")
+        raise HTTPException(status_code=400,
+                            detail=f"The task {taskId} does not exist")
     # get patch
     test_file = task.get_cover_test_file()
     logger.info(f'test_file: {test_file}')
@@ -186,22 +204,25 @@ def handle_cover_task(taskId) -> tuple[str, str]:
 
     return (task.get_status().name, content)
 
+
 def gen_cover_history_data(taskId: str):
     task = get_task(taskId)
     logger.info(f'get task: {task}')
     idx = 0
     last_update = datetime.now()
-    logger.info(f'----------- start processing the history for task {task.get_id()} at {datetime.now()}')
+    logger.info(
+        f'----------- start processing the history for task {task.get_id()} at {datetime.now()}'
+    )
     while True:
         n = task.get_history_len()
         logger.info(f'history len: {n}')
         if n == idx:
-           if datetime.now() - last_update > timedelta(minutes=1):
-               logger.warn(f"client waits too long, quit...")
-               return 
-           #TODO: use cond lock to replace time.sleep 
-           time.sleep(0.2)
-           continue
+            if datetime.now() - last_update > timedelta(minutes=1):
+                logger.warn("client waits too long, quit...")
+                return
+            #TODO: use cond lock to replace time.sleep
+            time.sleep(0.2)
+            continue
         last_update = datetime.now()
         for i in range(idx, n):
             item = task.get_history(i)

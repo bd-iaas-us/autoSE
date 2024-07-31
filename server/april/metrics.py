@@ -1,11 +1,11 @@
-from typing import List
-from dataclasses import dataclass
-from pydantic import BaseModel
-from datetime import datetime
-import os
 import json
-import pandas as pd
-import streamlit as st
+import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import List
+
+from pydantic import BaseModel
+
 
 class TrajStatus(BaseModel):
     api_calls: int
@@ -14,14 +14,16 @@ class TrajStatus(BaseModel):
     total_cost: float
     instance_cost: float
 
+
 class TrajPoint(TrajStatus):
     time: datetime
-    exit_status : str
+    exit_status: str
+
 
 @dataclass
 class LintPoint:
     time: datetime
-    dur :float
+    dur: float
 
 
 def find_traj_files(directory):
@@ -42,13 +44,13 @@ def parse_swe_traj(directory) -> List[TrajPoint]:
         data = json.loads(file_content)
         try:
             exit_status = data["info"]["exit_status"]
-        except:
+        except Exception as _:
             exit_status = "unknown"
-        tp = TrajPoint(time=ctime, **data["info"]["model_stats"], exit_status=exit_status)
+        tp = TrajPoint(time=ctime,
+                       **data["info"]["model_stats"],
+                       exit_status=exit_status)
         ret.append(tp)
     return ret
-
-
 
 
 def parse_log_line(line: str) -> LintPoint:
@@ -68,15 +70,17 @@ def parse_log_line(line: str) -> LintPoint:
     time_obj = datetime.strptime(datetime_part, DATE_FORMAT)
     return LintPoint(time=time_obj, dur=float(duration_str))
 
+
 def parse_lint(log_path: str) -> List[LintPoint]:
     ret = []
     with open(log_path, 'r') as f:
         for line in f:
-            if "lint code len" in line: 
+            if "lint code len" in line:
                 lint_point = parse_log_line(line)
                 ret.append(lint_point)
     return ret
-    
+
+
 if __name__ == "__main__":
     print(parse_swe_traj("."))
     print(parse_lint("lint.log"))
