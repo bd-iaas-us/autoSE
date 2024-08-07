@@ -87,7 +87,7 @@ class Task:
     # entry must be a valid json object
     def append_history(self, entry):
         with self._lock:
-            logger.info(f'APPEND history: {entry}')
+            logger.debug(f'APPEND history: {entry}')
             self.histories.append(entry)
 
     def get_history_len(self):

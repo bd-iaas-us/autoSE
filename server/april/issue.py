@@ -21,6 +21,7 @@ except Exception as _:
 sys.path.append(swe_dir)
 import run
 from logger import init_logger
+from sweagent.agent.agents import AgentHook, APIStats, TrajectoryStep
 
 logger = init_logger(__name__)
 
@@ -37,7 +38,7 @@ tasks: Dict[str, Task] = {}
 
 class SWEAgent:
 
-    def __init__(self, data_path, repo_path, ailint_task, model):
+    def __init__(self, data_path, repo_path, task, model):
         '''
         data_path: the path to the issue file, should be end with .md or .txt
         repo_path: the path to the repo directory, should be clean except the issue file
@@ -49,7 +50,7 @@ class SWEAgent:
             self.model_name = model.split(":")[1]
         else:
             self.model_name = model
-        self.ailint_task = ailint_task
+        self.task = task
 
     def run(self):
         '''
@@ -64,9 +65,26 @@ class SWEAgent:
             '--repo_path', self.repo_path, '--config_file',
             'config/default_from_url.yaml', '--apply_patch_locally'
         ])
-        run_main = run.Main(script_args, self.ailint_task)
+        run_main = run.Main(script_args)
+        run_main.agent.add_hook(StepHook(self.task))
         Thread(target=run_main.main).start()
         return os.path.join(swe_dir, run_main.traj_dir)
+
+
+class StepHook(AgentHook):
+
+    def __init__(self, task):
+        self.task = task
+
+    def on_step_done(self, *, trajectory_step: TrajectoryStep,
+                     model_stats: APIStats):
+        self.task.append_history({
+            "action": trajectory_step["action"],
+            "observation": trajectory_step["observation"],
+            "response": trajectory_step["response"],
+            "state": trajectory_step["state"],
+            "thought": trajectory_step["thought"]
+        })
 
 
 # The function generate a suffix based upon the datetime it is called
