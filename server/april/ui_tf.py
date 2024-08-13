@@ -5,6 +5,9 @@ import streamlit as st
 from tf import handle_tf
 
 
+with open("intro.md", "r") as f:
+    intro_content = f.read()
+
 def worker(input, queue):
     try:
         result = handle_tf(input)
@@ -15,12 +18,16 @@ def worker(input, queue):
 
 
 def main_layout():
-    st.title("Terraform Handler UI")
+    st.title("volcengine terraform generator")
+    
+    st.markdown(intro_content)
+
 
     input_value = st.text_area(r"$\textsf{\large Enter your question}$",
                                "",
                                height=150)
 
+    
     if st.button("Run"):
         if not input_value.strip():
             st.warning("Please enter your question.")
