@@ -44,7 +44,7 @@ def tf_validate(tf_code):
     cmd = f'cd {tf_validate_dir}; tf validate'
     ret, output = subprocess.getstatusoutput(cmd)
     logger.info(f'validate result: {output}')
-    return ret == 0
+    return ret, output
 
 
 def handle_tf(input: str) -> str:
@@ -77,27 +77,31 @@ def handle_tf(input: str) -> str:
         with open(os.path.join(doc_path, resource_file)) as resource_doc:
             system_2 += resource_doc.read() + "\n"
 
-    user_2 = f'用户问了"{input}"，请给出相应的terraform代码。如果required fields没提供，必须用"<to_be_provided>"代替。如果field是optional的，那么不需要提供。如果是引用到的资源，也不需要提供。'
+    user_2 = f'用户问了"{input}"，请给出相应的terraform代码。如果required fields没提供，必须用""或[""]代替。如果field是optional的，那么不需要提供。如果是引用到的资源，也不需要提供。'
 
-    response = client.chat.completions.create(model="gpt-4o-mini-2024-07-18",
-                                              messages=[{
-                                                  "role": "system",
-                                                  "content": system_2
-                                              }, {
-                                                  "role": "user",
-                                                  "content": user_2
-                                              }])
+    messages = [{
+        "role": "system",
+        "content": system_2
+    }, {
+        "role": "user",
+        "content": user_2
+    }]
 
-    resp2 = response.choices[0].message.content
-    # logger.info(resp2)
-    start = '```hcl'
-    end = '```'
-    hcl_code_str = resp2[resp2.find(start) +
-                         len(start):resp2.rfind(end)].strip()
-    logger.info(hcl_code_str)
+    while len(messages) < 7:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini-2024-07-18", messages=messages)
+        resp2 = response.choices[0].message.content
+        # logger.info(resp2)
+        start = '```hcl'
+        end = '```'
+        hcl_code_str = resp2[resp2.find(start) +
+                             len(start):resp2.rfind(end)].strip()
+        logger.info(hcl_code_str)
 
-    if tf_validate(hcl_code_str):
-        return hcl_code_str
-    else:
-        # todo: another loop
-        logger.info('validate failed')
+        ret, output = tf_validate(hcl_code_str)
+        if not ret:
+            return hcl_code_str
+        else:
+            logger.info("validate failed, try again.")
+            messages.append({"role": "assistant", "content": resp2})
+            messages.append({"role": "user", "content": output})
