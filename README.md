@@ -10,7 +10,7 @@
 
 # AutoSE
 
-AutoSE (Automated Software Engineering) is an AI-agent-based service that automates various software development activities. It is designed to automatically tackle complex software engineering tasks across different stages of the software development lifecycle, including design, coding, testing, and operation. By leveraging cutting-edge LLM and AI agent technology, AutoSE aims to provide effective solutions to these challenges.
+AutoSE (Automated Software Engineering) is an AI-agent-based service that automates various software development activities. It is designed to seamlessly tackle complex software engineering tasks across different stages of the software development lifecycle, including design, coding, testing, and operation. By leveraging cutting-edge LLM and AI agent technology, AutoSE aims to provide effective solutions to these challenges.
 
 ## Features
 
@@ -18,15 +18,15 @@ AutoSE (Automated Software Engineering) is an AI-agent-based service that automa
   * Scan a code file or a git diff to identify potential code problems.
   * Offer suggestions and potential fixes for the problems. 
 * Dev:
-  * Given a github task or a local task description file, generate a local git patch for the specifiled task. 
+  * Given a github task or a local task description file, generate a local git patch for the specified task. 
 
-## Highlight
+## Highlights
 * Rich set of actions
-  * add new actions to support the LLM to understand code quicker.
+  * Add new actions for the LLM to understand code efficiently.
 * RAG support
-   * enhance the model's ability to retrieve relevant information and generate more accurate, context-aware responses.
+   * Enhance the model's ability to retrieve relevant information and generate more accurate & context-aware responses.
 * Generate Infrastructure as Code - Terraform
-  * generate Infrastructure as Code (IaC) for Terraform to configure the environment based on the users' requirements, and validate the syntax.
+  * Generate Infrastructure as Code (IaC) for Terraform to configure the environment based on the users' requirements and validate the syntax.
 
 ## Installation
 
@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/bd-iaas-us/autoSE/main/install.sh |
 
 2. Setup the environment variables `API_URL` and `API_KEY`.
 
-AutoSE is not only a commandline tool. It relies on a backend with the power of LLM, RAG and vector storage. You can setup your own backend or use an existing backend. We will update the document soon on how to setup your own backend. Before that, just find an existing backend and set environment variables `API_URL` and `API_KEY` to point to it.
+AutoSE is not only a command-line tool. It relies on a backend with the power of LLM, RAG and vector storage. You can setup your own backend or use an existing backend. We will update the document soon on how to setup your own backend. At this time, just find an existing backend and set environment variables `API_URL` and `API_KEY` to point to it.
 
 
 
