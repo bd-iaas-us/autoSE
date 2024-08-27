@@ -18,6 +18,9 @@ def worker(input, queue):
 
 
 def main_layout():
+
+    st.set_page_config(page_title="autose poc terraform",
+                       initial_sidebar_state="expanded")
     st.title("volcengine terraform generator")
 
     st.markdown(intro_content)

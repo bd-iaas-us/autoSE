@@ -4,7 +4,7 @@
 
 1. clone volocengine docs
 2. receive prompt
-3. use openai as a classifier. find all related docs based on the prompt.(not vectordata based RAG)
+3. use openai as a classifier. find all related docs based on the prompt.(not vector database RAG)
 4. open related volocengine docs. and tell openai to generate HCL
 5. validate HCL by running `tf validate`
 6. if validation failed, append error message to prompt, and goto step 2
