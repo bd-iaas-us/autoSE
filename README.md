@@ -102,6 +102,9 @@ Replace {your_path} with the actual path to your application directory, for exam
 }'`
 
 ## Version History
+* 0.5:
+  * Switch backend from vanilla [swe-agent](https://github.com/princeton-nlp/SWE-agent) to [forked-version swe-agent](https://github.com/bd-iaas-us/SWE-agent) which supports multiple actions in one round. The new swe-agent get a solve rate of [21%](https://github.com/swe-bench/experiments/pull/65) on swebench.
+  * Known bugs: Only python language is supported in search actions.
 * 0.4:
   * Support Terraform generation, with the support RAG and result verification.
   * Add new actions to swe-agent 
