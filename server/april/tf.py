@@ -1,6 +1,8 @@
 import json
 import os
 import subprocess
+from typing import Optional,List
+
 
 from logger import init_logger
 from openai import OpenAI
@@ -19,21 +21,36 @@ class ResourceTypes(BaseModel):
 
 
 client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-doc_path = '/root/git/terraform-provider-volcengine/website/docs/r'
+
+git_repo = '/root/git/terraform-provider-volcengine/'
+doc_path = f'{git_repo}/website/docs/r'
 
 tf_validate_dir = '/data00/jxp/tf'
 tf_validate_file = 'test.tf'
 
-system_1 = "你是一个火山引擎的资源分类器，以下是对不同资源的描述。\n"
-for f in os.listdir(doc_path):
-    with open(os.path.join(doc_path, f)) as resource_doc:
-        lines = resource_doc.readlines()
-        for idx, line in enumerate(lines):
-            if line.startswith('page_title:'):
-                system_1 += line.split(':')[2].strip()[0:-1] + ': '
-            if line.startswith('description:'):
-                system_1 += lines[idx + 1].strip() + ';\n'
-                break
+def check_git_repo_exist():
+    if not os.path.isdir(git_repo):
+        raise Exception("clone git repo terraform-provider-volcengine first...")
+    if not os.path.isdir(f'{git_repo}/.git/'):
+        raise Exception(f"{git_repo} does not have .git")
+#check git repo
+check_git_repo_exist()
+
+
+
+
+def build_system_1(doc_path):
+    system_1 = "你是一个火山引擎的资源分类器，以下是对不同资源的描述。\n"
+    for f in os.listdir(doc_path):
+        with open(os.path.join(doc_path, f)) as resource_doc:
+            lines = resource_doc.readlines()
+            for idx, line in enumerate(lines):
+                if line.startswith('page_title:'):
+                    system_1 += line.split(':')[2].strip()[0:-1] + ': '
+                if line.startswith('description:'):
+                    system_1 += lines[idx + 1].strip() + ';\n'
+                    break
+    return system_1
 
 
 def tf_validate(tf_code):
@@ -47,10 +64,42 @@ def tf_validate(tf_code):
     return ret, output
 
 
-def handle_tf(input: str) -> str:
+
+def git_shell(*args):
+    result = subprocess.run(
+            list(args),
+            cwd=git_repo,
+            check=True, 
+            text=True,
+            capture_output=True
+    )
+    print(result)
+
+
+def fetch_commit(git_commit_hash: Optional[str]=None):
+    try:
+        git_shell('git', 'fetch')
+        if git_commit_hash is None:
+            git_shell('git', 'reset', '--hard', 'origin/master')
+        else:
+            git_shell('git', 'checkout', git_commit_hash)
+    except:
+        if git_commit_hash is not None:
+            raise Exception(f"try to checkout commit #{git_commit_hash} failed")
+        else:
+            raise Exception('failed to clone document repo')
+
+
+def handle_tf(input: str, git_commit_hash: Optional[str] = None) -> str:
+    if git_commit_hash is not None and git_commit_hash == "":
+        raise Exception("git_commit_hash can not be ''")
+
     user_1 = f"用户问了'{input}'，请告诉我需要哪种资源类型的文档，用json表示。"
     logger.info(user_1)
 
+    fetch_commit(git_commit_hash)
+
+    system_1 = build_system_1(doc_path)
     response = client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
         response_format=ResourceTypes,
@@ -105,3 +154,6 @@ def handle_tf(input: str) -> str:
             logger.info("validate failed, try again.")
             messages.append({"role": "assistant", "content": resp2})
             messages.append({"role": "user", "content": output})
+
+if __name__ == "__main__":
+	handle_tf("test")

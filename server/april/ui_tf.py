@@ -8,9 +8,9 @@ with open("intro.md", "r") as f:
     intro_content = f.read()
 
 
-def worker(input, queue):
+def worker(input, commit_hash, queue):
     try:
-        result = handle_tf(input)
+        result = handle_tf(input, commit_hash if commit_hash != "" else None)
     except Exception as e:
         queue.put(e)
     else:
@@ -25,6 +25,8 @@ def main_layout():
 
     st.markdown(intro_content)
 
+
+    commit_hash = st.text_input(r"$\textsf{\large commit hash or leave blank for master branch}$", "")
     input_value = st.text_area(r"$\textsf{\large Enter your question}$",
                                "",
                                height=150)
@@ -36,7 +38,7 @@ def main_layout():
             result_queue = Queue()
 
             # Start the worker thread
-            thread = Thread(target=worker, args=(input_value, result_queue))
+            thread = Thread(target=worker, args=(input_value, commit_hash.strip(), result_queue))
             thread.start()
 
             with st.spinner('Processing...'):
